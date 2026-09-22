@@ -117,7 +117,27 @@
     <menu><button value="cancel">キャンセル</button><button type="button" id="saveSettingsBtn" class="primary">保存</button></menu>
   </form></dialog>
 
-  <dialog id="exportDialog"><form method="dialog" class="dialog-card"><h2>TXT出力</h2><label class="checkbox-line"><input type="checkbox" id="includeHeadings" checked> 章見出しを含める</label><label class="checkbox-line"><input type="checkbox" id="blankBetweenChapters" checked> 章間に空行を入れる</label><label class="checkbox-line"><input type="checkbox" id="collapseBlankLines"> 連続空行を1つにする</label><label class="checkbox-line"><input type="checkbox" id="trimLineHeads"> 行頭の空白を削除</label><menu><button value="cancel">キャンセル</button><button type="button" id="downloadTxtBtn" class="primary">出力</button></menu></form></dialog>
+  <dialog id="exportDialog"><form method="dialog" class="dialog-card">
+    <h2>TXT出力</h2>
+    <section class="export-section">
+      <h3>本文</h3>
+      <p class="small muted">通常の原稿出力です。アウトラインとキャラ設定は含まれません。</p>
+      <label class="checkbox-line"><input type="checkbox" id="includeHeadings" checked> 章見出しを含める</label>
+      <label class="checkbox-line"><input type="checkbox" id="blankBetweenChapters" checked> 章間に空行を入れる</label>
+      <label class="checkbox-line"><input type="checkbox" id="collapseBlankLines"> 連続空行を1つにする</label>
+      <label class="checkbox-line"><input type="checkbox" id="trimLineHeads"> 行頭の空白を削除</label>
+      <button type="button" id="downloadTxtBtn" class="primary export-wide">本文を出力</button>
+    </section>
+    <section class="export-section">
+      <h3>補助ページ</h3>
+      <p class="small muted">必要なときだけ、それぞれ別ファイルとして出力します。</p>
+      <div class="export-buttons">
+        <button type="button" id="downloadOutlineTxtBtn">アウトラインを出力</button>
+        <button type="button" id="downloadCharactersTxtBtn">キャラ設定を出力</button>
+      </div>
+    </section>
+    <menu><button value="cancel">閉じる</button></menu>
+  </form></dialog>
 
   <script type="module" src="./app.js"></script>
 </body>
