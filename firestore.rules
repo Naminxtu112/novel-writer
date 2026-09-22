@@ -12,14 +12,19 @@ service cloud.firestore {
       allow read, update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
 
       match /chapters/{chapterId} {
-        allow read, write: if signedIn() &&
+        allow create: if signedIn() &&
+          getAfter(/databases/$(database)/documents/novels/$(novelId)).data.ownerId == request.auth.uid;
+        allow read, update, delete: if signedIn() &&
           get(/databases/$(database)/documents/novels/$(novelId)).data.ownerId == request.auth.uid;
       }
     }
 
     match /slugs/{slugKey} {
+      allow get: if signedIn();
+      allow list: if false;
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read, update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
     }
   }
 }
