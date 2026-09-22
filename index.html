@@ -19,7 +19,6 @@
         <button id="loginBtn" class="primary">ログイン</button>
         <button id="signupBtn">新規ユーザー作成</button>
       </div>
-      <p class="small muted">ログインIDは内部でFirebase Authentication用の仮想メールアドレスへ変換されます。</p>
     </div>
   </section>
 
@@ -45,32 +44,38 @@
         <div class="deadline-row" id="deadlineRow"></div>
       </div>
       <div class="top-actions">
-        <button id="backBtn">作品一覧</button><button id="proofBtn">校閲</button><button id="settingsBtn">設定</button><button id="exportBtn" class="primary">TXT出力</button>
+        <button id="backBtn">作品一覧</button>
+        <button id="proofBtn">校閲</button>
+        <button id="settingsBtn">設定</button>
+        <button id="exportBtn" class="primary">TXT出力</button>
       </div>
     </header>
 
-    <nav class="chapter-bar"><div id="chapterTabs" class="chapter-tabs"></div><button id="addChapterBtn" class="chapter-add">＋ 章追加</button></nav>
+    <nav class="workspace-nav">
+      <button id="manuscriptPageBtn" class="workspace-tab active">本文</button>
+      <button id="outlinePageBtn" class="workspace-tab">アウトライン</button>
+      <button id="charactersPageBtn" class="workspace-tab">キャラ設定</button>
+    </nav>
 
-    <main class="editor-wrap">
+    <nav id="chapterBar" class="chapter-bar">
+      <div id="chapterTabs" class="chapter-tabs"></div>
+      <button id="addChapterBtn" class="chapter-add">＋ 章追加</button>
+    </nav>
+
+    <main id="manuscriptPage" class="editor-wrap workspace-page">
       <div class="novel-title-row"><strong id="novelTitleLabel"></strong><span id="cloudState" class="muted">同期中…</span></div>
       <div id="proofSummary" class="proof-summary hidden"></div>
       <div id="editor" class="editor" contenteditable="true" spellcheck="false"></div>
     </main>
 
     <main id="outlinePage" class="editor-wrap workspace-page hidden">
-      <div class="novel-title-row">
-        <strong>アウトライン</strong>
-        <span class="muted">任意。本文・進捗には影響しません。</span>
-      </div>
-      <div id="outlineEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="プロット、章構成、伏線、メモなどを自由に入力"></div>
+      <div class="novel-title-row"><strong>アウトライン</strong><span class="muted">任意。本文・進捗・TXT出力には影響しません。</span></div>
+      <div id="outlineEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="プロット、章構成、伏線、メモなど"></div>
     </main>
 
     <main id="charactersPage" class="editor-wrap workspace-page hidden">
-      <div class="novel-title-row">
-        <strong>キャラ設定</strong>
-        <span class="muted">任意。本文・進捗には影響しません。</span>
-      </div>
-      <div id="charactersEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="人物名、年齢、関係性、口調、外見、設定メモなどを自由に入力"></div>
+      <div class="novel-title-row"><strong>キャラ設定</strong><span class="muted">任意。本文・進捗・TXT出力には影響しません。</span></div>
+      <div id="charactersEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="人物名、年齢、関係性、口調、外見、設定メモなど"></div>
     </main>
 
     <footer id="statusbar" class="statusbar">
@@ -84,15 +89,27 @@
     <label>作品名<input id="newTitle" placeholder="作品名"></label>
     <label>よみ（任意）<input id="newReading" placeholder="例: よあけまえのはにーみるく"></label>
     <label>URL名<input id="newSlug" placeholder="yoakemae-no-honey-milk"></label>
-    <p class="small muted">作品名／よみからURL候補を作成します。候補は自由に修正できます。</p>
+    <p class="small muted">URL候補は自動生成後、自由に修正できます。</p>
     <label>目標文字数<input id="newTarget" type="number" value="80000" min="1"></label>
-    <label>早割り<input id="newEarly" type="datetime-local"></label><label>標準<input id="newStandard" type="datetime-local"></label><label>特急<input id="newExpress" type="datetime-local"></label>
+    <h3>締切（1つだけでも可）</h3>
+    <label>早割り<input id="newEarly" type="datetime-local"></label>
+    <label>標準<input id="newStandard" type="datetime-local"></label>
+    <label>特急<input id="newExpress" type="datetime-local"></label>
     <menu><button value="cancel">キャンセル</button><button type="button" id="createNovelBtn" class="primary">作成</button></menu>
   </form></dialog>
 
   <dialog id="settingsDialog"><form method="dialog" class="dialog-card">
     <h2>作品設定</h2>
-    <section><h3>締切</h3><label>早割り<input type="datetime-local" id="earlyDeadline"></label><label>標準<input type="datetime-local" id="standardDeadline"></label><label>特急<input type="datetime-local" id="expressDeadline"></label><label>メイン表示<select id="activeDeadline"><option value="early">早割り</option><option value="standard">標準</option><option value="express">特急</option></select></label></section>
+    <section>
+      <h3>締切</h3>
+      <p class="small muted">最大3件。使用しない締切は日時を空欄にしてください。名称も自由に変更できます。</p>
+      <div class="deadline-setting-grid">
+        <input id="earlyDeadlineLabel" value="早割り" aria-label="締切1名称"><input type="datetime-local" id="earlyDeadline">
+        <input id="standardDeadlineLabel" value="標準" aria-label="締切2名称"><input type="datetime-local" id="standardDeadline">
+        <input id="expressDeadlineLabel" value="特急" aria-label="締切3名称"><input type="datetime-local" id="expressDeadline">
+      </div>
+      <label>メイン表示<select id="activeDeadline"></select></label>
+    </section>
     <section><h3>目標</h3><label>目標文字数<input type="number" id="targetWordsInput" min="1" step="1000"></label></section>
     <section><h3>ページ換算</h3><label>プリセット<select id="pagePreset"><option value="A6">A6 縦書き（40字×16行）</option><option value="A5">A5 縦書き（57字×23行）</option><option value="custom">カスタム</option></select></label><label>ページ換算用フォントサイズ<input type="number" id="fontSize" min="6" max="40" step="0.5"> pt</label><label>1行の文字数<input type="number" id="charsPerLine" min="1"></label><label>1ページの行数<input type="number" id="linesPerPage" min="1"></label><label class="checkbox-line"><input type="checkbox" id="realPageMode"> 改行を考慮してページ推定する</label></section>
     <section><h3>執筆画面</h3><label>本文表示フォントサイズ<input type="number" id="editorFontSize" min="10" max="40" step="1"> px</label></section>
