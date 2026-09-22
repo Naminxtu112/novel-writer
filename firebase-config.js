@@ -10,3 +10,4 @@ export const firebaseConfig = {
 // GitHub Pages: https://USERNAME.github.io/novel-writer/ → "/novel-writer/"
 // 独自ドメイン直下なら "/"
 export const APP_BASE_PATH = "/novel-writer/";
+
