@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Novel Deadline Editor</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="toast" class="toast hidden"></div>
+
+  <section id="authView" class="center-view">
+    <div class="card auth-card">
+      <h1>Novel Deadline Editor</h1>
+      <p class="muted">ログインIDと編集パスワードで作品を同期します。</p>
+      <label>ログインID<input id="loginId" autocomplete="username" placeholder="例: namin"></label>
+      <label>編集パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
+      <div class="row-actions">
+        <button id="loginBtn" class="primary">ログイン</button>
+        <button id="signupBtn">新規ユーザー作成</button>
+      </div>
+      <p class="small muted">ログインIDは内部でFirebase Authentication用の仮想メールアドレスへ変換されます。</p>
+    </div>
+  </section>
+
+  <section id="dashboardView" class="hidden">
+    <header class="simple-header">
+      <div><strong>作品一覧</strong><span id="currentUserLabel" class="muted"></span></div>
+      <button id="logoutBtn">ログアウト</button>
+    </header>
+    <main class="dashboard">
+      <div class="dashboard-head">
+        <div><h1>作品</h1><p class="muted">PC・スマホから同じ作品を編集できます。</p></div>
+        <button id="newNovelBtn" class="primary">＋ 新しい作品</button>
+      </div>
+      <div id="novelList" class="novel-list"></div>
+    </main>
+  </section>
+
+  <section id="editorView" class="hidden app-shell">
+    <header class="topbar">
+      <div class="deadline-panel">
+        <div class="deadline-label">締切まで</div>
+        <div id="countdown" class="countdown">--日 --:--:--</div>
+        <div class="deadline-row" id="deadlineRow"></div>
+      </div>
+      <div class="top-actions">
+        <button id="backBtn">作品一覧</button><button id="proofBtn">校閲</button><button id="settingsBtn">設定</button><button id="exportBtn" class="primary">TXT出力</button>
+      </div>
+    </header>
+
+    <nav class="chapter-bar"><div id="chapterTabs" class="chapter-tabs"></div><button id="addChapterBtn" class="chapter-add">＋ 章追加</button></nav>
+
+    <main class="editor-wrap">
+      <div class="novel-title-row"><strong id="novelTitleLabel"></strong><span id="cloudState" class="muted">同期中…</span></div>
+      <div id="proofSummary" class="proof-summary hidden"></div>
+      <div id="editor" class="editor" contenteditable="true" spellcheck="false"></div>
+    </main>
+
+    <footer class="statusbar">
+      <div class="status-main"><div><strong id="wordCount">0</strong> / <span id="targetCount">80,000</span>字</div><div class="progress"><div id="progressBar" class="progress-fill"></div></div><div><strong id="progressPct">0.0%</strong></div></div>
+      <div class="status-sub"><span id="pageEstimate">約0.0p</span><span id="pagePresetLabel">A6 40字×16行</span><span id="remainingCount">残り80,000字</span><span id="todayCount">今日 +0字</span><span id="paceCount">必要 0字/日</span><span id="saveState">保存済み</span></div>
+    </footer>
+  </section>
+
+  <dialog id="newNovelDialog"><form method="dialog" class="dialog-card">
+    <h2>新しい作品</h2>
+    <label>作品名<input id="newTitle" placeholder="作品名"></label>
+    <label>よみ（任意）<input id="newReading" placeholder="例: よあけまえのはにーみるく"></label>
+    <label>URL名<input id="newSlug" placeholder="yoakemae-no-honey-milk"></label>
+    <p class="small muted">作品名／よみからURL候補を作成します。候補は自由に修正できます。</p>
+    <label>目標文字数<input id="newTarget" type="number" value="80000" min="1"></label>
+    <label>早割り<input id="newEarly" type="datetime-local"></label><label>標準<input id="newStandard" type="datetime-local"></label><label>特急<input id="newExpress" type="datetime-local"></label>
+    <menu><button value="cancel">キャンセル</button><button type="button" id="createNovelBtn" class="primary">作成</button></menu>
+  </form></dialog>
+
+  <dialog id="settingsDialog"><form method="dialog" class="dialog-card">
+    <h2>作品設定</h2>
+    <section><h3>締切</h3><label>早割り<input type="datetime-local" id="earlyDeadline"></label><label>標準<input type="datetime-local" id="standardDeadline"></label><label>特急<input type="datetime-local" id="expressDeadline"></label><label>メイン表示<select id="activeDeadline"><option value="early">早割り</option><option value="standard">標準</option><option value="express">特急</option></select></label></section>
+    <section><h3>目標</h3><label>目標文字数<input type="number" id="targetWordsInput" min="1" step="1000"></label></section>
+    <section><h3>ページ換算</h3><label>プリセット<select id="pagePreset"><option value="A6">A6 縦書き（40字×16行）</option><option value="A5">A5 縦書き（57字×23行）</option><option value="custom">カスタム</option></select></label><label>ページ換算用フォントサイズ<input type="number" id="fontSize" min="6" max="40" step="0.5"> pt</label><label>1行の文字数<input type="number" id="charsPerLine" min="1"></label><label>1ページの行数<input type="number" id="linesPerPage" min="1"></label><label class="checkbox-line"><input type="checkbox" id="realPageMode"> 改行を考慮してページ推定する</label></section>
+    <section><h3>執筆画面</h3><label>本文表示フォントサイズ<input type="number" id="editorFontSize" min="10" max="40" step="1"> px</label></section>
+    <section><h3>ユーザー校閲ルール</h3><div id="customRulesList"></div><div class="rule-entry"><input id="ruleFrom" placeholder="検出語（例：出来る）"><input id="ruleTo" placeholder="推奨表記（例：できる）"><button type="button" id="addRuleBtn">追加</button></div></section>
+    <menu><button value="cancel">キャンセル</button><button type="button" id="saveSettingsBtn" class="primary">保存</button></menu>
+  </form></dialog>
+
+  <dialog id="exportDialog"><form method="dialog" class="dialog-card"><h2>TXT出力</h2><label class="checkbox-line"><input type="checkbox" id="includeHeadings" checked> 章見出しを含める</label><label class="checkbox-line"><input type="checkbox" id="blankBetweenChapters" checked> 章間に空行を入れる</label><label class="checkbox-line"><input type="checkbox" id="collapseBlankLines"> 連続空行を1つにする</label><label class="checkbox-line"><input type="checkbox" id="trimLineHeads"> 行頭の空白を削除</label><menu><button value="cancel">キャンセル</button><button type="button" id="downloadTxtBtn" class="primary">出力</button></menu></form></dialog>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

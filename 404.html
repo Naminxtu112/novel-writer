@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><script>
+(function(){
+  const p = location.pathname;
+  let base = "/";
+  if (location.hostname.endsWith(".github.io")) {
+    const seg = p.split("/").filter(Boolean);
+    if (seg.length) base = "/" + seg[0] + "/";
+  }
+  location.replace(base + "?redirect=" + encodeURIComponent(p + location.search + location.hash));
+})();
+</script>
