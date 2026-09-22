@@ -1,25 +1,57 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+
+    function signedIn() {
+      return request.auth != null;
+    }
 
     match /users/{userId} {
-      allow read, write: if signedIn() && request.auth.uid == userId;
+      allow read, write:
+        if signedIn()
+        && request.auth.uid == userId;
     }
 
     match /novels/{novelId} {
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read, update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      // 新規作品
+      allow create:
+        if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      // 既存作品
+      allow read, update, delete:
+        if signedIn()
+        && resource.data.ownerId == request.auth.uid;
 
       match /chapters/{chapterId} {
-        allow read, write: if signedIn() &&
-          get(/databases/$(database)/documents/novels/$(novelId)).data.ownerId == request.auth.uid;
+
+        // 新規作品と第1章を同じバッチで作成する場合
+        allow create:
+          if signedIn()
+          && getAfter(
+            /databases/$(database)/documents/novels/$(novelId)
+          ).data.ownerId == request.auth.uid;
+
+        // 既存作品の章
+        allow read, update, delete:
+          if signedIn()
+          && get(
+            /databases/$(database)/documents/novels/$(novelId)
+          ).data.ownerId == request.auth.uid;
       }
     }
 
     match /slugs/{slugKey} {
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read, update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create:
+        if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow read, update, delete:
+        if signedIn()
+        && resource.data.ownerId == request.auth.uid;
     }
   }
 }
