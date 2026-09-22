@@ -7,34 +7,34 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // ユーザー情報
     match /users/{userId} {
       allow read, write:
         if signedIn()
         && request.auth.uid == userId;
     }
 
+    // 作品
     match /novels/{novelId} {
 
-      // 新規作品
       allow create:
         if signedIn()
         && request.resource.data.ownerId == request.auth.uid;
 
-      // 既存作品
       allow read, update, delete:
         if signedIn()
         && resource.data.ownerId == request.auth.uid;
 
+      // 章
       match /chapters/{chapterId} {
 
-        // 新規作品と第1章を同じバッチで作成する場合
+        // 新規作品と第1章を同じbatchで作る場合
         allow create:
           if signedIn()
           && getAfter(
             /databases/$(database)/documents/novels/$(novelId)
           ).data.ownerId == request.auth.uid;
 
-        // 既存作品の章
         allow read, update, delete:
           if signedIn()
           && get(
@@ -43,13 +43,29 @@ service cloud.firestore {
       }
     }
 
+    // URL slug
     match /slugs/{slugKey} {
+
+      // app.jsが「このslugは既に存在するか」を
+      // getDoc()で確認するため必要
+      //
+      // list（一覧取得）は許可しない
+      allow get:
+        if signedIn();
+
+      allow list:
+        if false;
 
       allow create:
         if signedIn()
         && request.resource.data.ownerId == request.auth.uid;
 
-      allow read, update, delete:
+      allow update:
+        if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow delete:
         if signedIn()
         && resource.data.ownerId == request.auth.uid;
     }
