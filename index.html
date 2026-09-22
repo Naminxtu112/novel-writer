@@ -57,7 +57,23 @@
       <div id="editor" class="editor" contenteditable="true" spellcheck="false"></div>
     </main>
 
-    <footer class="statusbar">
+    <main id="outlinePage" class="editor-wrap workspace-page hidden">
+      <div class="novel-title-row">
+        <strong>アウトライン</strong>
+        <span class="muted">任意。本文・進捗には影響しません。</span>
+      </div>
+      <div id="outlineEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="プロット、章構成、伏線、メモなどを自由に入力"></div>
+    </main>
+
+    <main id="charactersPage" class="editor-wrap workspace-page hidden">
+      <div class="novel-title-row">
+        <strong>キャラ設定</strong>
+        <span class="muted">任意。本文・進捗には影響しません。</span>
+      </div>
+      <div id="charactersEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="人物名、年齢、関係性、口調、外見、設定メモなどを自由に入力"></div>
+    </main>
+
+    <footer id="statusbar" class="statusbar">
       <div class="status-main"><div><strong id="wordCount">0</strong> / <span id="targetCount">80,000</span>字</div><div class="progress"><div id="progressBar" class="progress-fill"></div></div><div><strong id="progressPct">0.0%</strong></div></div>
       <div class="status-sub"><span id="pageEstimate">約0.0p</span><span id="pagePresetLabel">A6 40字×16行</span><span id="remainingCount">残り80,000字</span><span id="todayCount">今日 +0字</span><span id="paceCount">必要 0字/日</span><span id="saveState">保存済み</span></div>
     </footer>
