@@ -1,30 +1,68 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsNovel(novelId) {
+      return signedIn() &&
+        get(
+          /databases/$(database)/documents/novels/$(novelId)
+        ).data.ownerId == request.auth.uid;
+    }
+
+    // writeBatch 内で新規作成される親 novel を判定する
+    function ownsNovelAfter(novelId) {
+      return signedIn() &&
+        getAfter(
+          /databases/$(database)/documents/novels/$(novelId)
+        ).data.ownerId == request.auth.uid;
+    }
 
     match /users/{userId} {
-      allow read, write: if signedIn() && request.auth.uid == userId;
+      allow read, write:
+        if signedIn() &&
+        request.auth.uid == userId;
     }
 
     match /novels/{novelId} {
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read, update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create:
+        if signedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
+
+      allow read, update, delete:
+        if signedIn() &&
+        resource.data.ownerId == request.auth.uid;
 
       match /chapters/{chapterId} {
-        allow create: if signedIn() &&
-          getAfter(/databases/$(database)/documents/novels/$(novelId)).data.ownerId == request.auth.uid;
-        allow read, update, delete: if signedIn() &&
-          get(/databases/$(database)/documents/novels/$(novelId)).data.ownerId == request.auth.uid;
+
+        // 既存作品の章を読む
+        allow read:
+          if ownsNovel(novelId);
+
+        // 新規作品作成時は novel と chapter が同一batchなので getAfter
+        allow create:
+          if ownsNovelAfter(novelId);
+
+        // 既存章の更新・削除
+        allow update, delete:
+          if ownsNovel(novelId);
       }
     }
 
     match /slugs/{slugKey} {
-      allow get: if signedIn();
-      allow list: if false;
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if signedIn() && resource.data.ownerId == request.auth.uid && request.resource.data.ownerId == request.auth.uid;
-      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create:
+        if signedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
+
+      allow read, update, delete:
+        if signedIn() &&
+        resource.data.ownerId == request.auth.uid;
     }
   }
 }
