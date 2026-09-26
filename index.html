@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Novel Deadline Editor</title>
-  <link rel="stylesheet" href="./style.css?v=7.6.0">
+  <link rel="stylesheet" href="./style.css?v=7.7.0">
 </head>
 <body>
   <div id="toast" class="toast hidden"></div>
 
   <section id="authView" class="center-view">
     <div class="card auth-card">
-      <h1>Novel Deadline Editor <span class="build-label">v7.5</span></h1>
+      <h1>Novel Deadline Editor <span class="build-label">v7.7</span></h1>
       <p class="muted">ログインIDと編集パスワードで作品を同期します。</p>
       <label>ログインID<input id="loginId" autocomplete="username" placeholder="例: namin"></label>
       <label>編集パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
@@ -24,7 +24,7 @@
 
   <section id="dashboardView" class="hidden">
     <header class="simple-header">
-      <div><strong>作品一覧</strong><span id="currentUserLabel" class="muted"></span><span class="build-label">v7.5</span></div>
+      <div><strong>作品一覧</strong><span id="currentUserLabel" class="muted"></span><span class="build-label">v7.7</span></div>
       <button id="logoutBtn">ログアウト</button>
     </header>
     <main class="dashboard">
@@ -121,6 +121,14 @@
             <button type="button" id="addCharacterRelationBtn" class="primary">＋ 関係追加</button>
           </div>
         </div>
+        <div class="graph-zoom-toolbar" id="characterGraphZoomToolbar">
+          <button type="button" id="characterGraphFitBtn">全体表示</button>
+          <button type="button" id="characterGraphZoomOutBtn" aria-label="縮小">－</button>
+          <span id="characterGraphZoomLabel" class="small muted zoom-label">100%</span>
+          <button type="button" id="characterGraphZoomInBtn" aria-label="拡大">＋</button>
+          <button type="button" id="characterGraphActualBtn">100%</button>
+          <span class="small muted">ピンチ/ Ctrl+ホイールで拡大縮小</span>
+        </div>
         <div class="character-relation-preview">
           <svg id="characterRelationSvg" class="character-relation-svg" xmlns="http://www.w3.org/2000/svg"></svg>
         </div>
@@ -194,6 +202,6 @@
     <menu><button value="cancel">閉じる</button></menu>
   </form></dialog>
 
-  <script type="module" src="./app.js?v=7.6.0"></script>
+  <script type="module" src="./app.js?v=7.7.0"></script>
 </body>
 </html>

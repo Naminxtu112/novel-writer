@@ -826,6 +826,90 @@ function deleteFlowNode(nodeId) {
   currentNovel.outlineFlow.links=currentNovel.outlineFlow.links.filter(l=>l.from!==nodeId&&l.to!==nodeId);
   markNovelDirty(); renderFlowSvg();
 }
+const characterGraphViewport = { scale: 1, minScale: 0.35, maxScale: 3, baseWidth: 0, baseHeight: 0, manual: false, pinch: null };
+function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+function relationPreviewWrap() { return document.querySelector("#charactersPage .character-relation-preview"); }
+function pinchDistance(t0, t1) { return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY); }
+function pinchCenter(t0, t1) { return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 }; }
+function applyCharacterGraphScale() {
+  const svg = $("characterRelationSvg"), label = $("characterGraphZoomLabel");
+  if (!svg || !characterGraphViewport.baseWidth || !characterGraphViewport.baseHeight) return;
+  const scale = clamp(characterGraphViewport.scale || 1, characterGraphViewport.minScale, characterGraphViewport.maxScale);
+  characterGraphViewport.scale = scale;
+  svg.style.width = `${Math.round(characterGraphViewport.baseWidth * scale)}px`;
+  svg.style.height = `${Math.round(characterGraphViewport.baseHeight * scale)}px`;
+  svg.style.maxWidth = "none";
+  if (label) label.textContent = `${Math.round(scale * 100)}%`;
+}
+function setCharacterGraphZoom(nextScale, { manual = true, anchorClientX = null, anchorClientY = null } = {}) {
+  const wrap = relationPreviewWrap(), svg = $("characterRelationSvg");
+  if (!wrap || !svg || !characterGraphViewport.baseWidth) return;
+  const prevScale = characterGraphViewport.scale || 1;
+  const rect = wrap.getBoundingClientRect();
+  const viewportX = anchorClientX == null ? wrap.clientWidth / 2 : anchorClientX - rect.left;
+  const viewportY = anchorClientY == null ? wrap.clientHeight / 2 : anchorClientY - rect.top;
+  const worldX = (wrap.scrollLeft + viewportX) / prevScale;
+  const worldY = (wrap.scrollTop + viewportY) / prevScale;
+  characterGraphViewport.scale = clamp(nextScale, characterGraphViewport.minScale, characterGraphViewport.maxScale);
+  characterGraphViewport.manual = manual;
+  applyCharacterGraphScale();
+  wrap.scrollLeft = Math.max(0, worldX * characterGraphViewport.scale - viewportX);
+  wrap.scrollTop = Math.max(0, worldY * characterGraphViewport.scale - viewportY);
+}
+function fitCharacterGraphZoom({ force = false } = {}) {
+  const wrap = relationPreviewWrap();
+  if (!wrap || !characterGraphViewport.baseWidth) return;
+  if (characterGraphViewport.manual && !force) return;
+  const fitW = (wrap.clientWidth - 18) / characterGraphViewport.baseWidth;
+  const fitH = (wrap.clientHeight - 18) / characterGraphViewport.baseHeight;
+  const fit = clamp(Math.min(1, fitW || 1, fitH || 1), characterGraphViewport.minScale, 1);
+  setCharacterGraphZoom(fit, { manual: false });
+}
+function resetCharacterGraphZoom() { characterGraphViewport.manual = false; fitCharacterGraphZoom({ force: true }); }
+function initCharacterGraphZoomUI() {
+  const wrap = relationPreviewWrap();
+  if (!wrap || wrap.dataset.zoomReady === "1") return;
+  wrap.dataset.zoomReady = "1";
+  wrap.addEventListener("wheel", e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    setCharacterGraphZoom((characterGraphViewport.scale || 1) * factor, { manual: true, anchorClientX: e.clientX, anchorClientY: e.clientY });
+  }, { passive: false });
+  wrap.addEventListener("touchstart", e => {
+    if (e.touches.length === 2) {
+      const [t0, t1] = e.touches;
+      characterGraphViewport.pinch = {
+        startScale: characterGraphViewport.scale || 1,
+        startDistance: pinchDistance(t0, t1),
+        lastCenter: pinchCenter(t0, t1)
+      };
+      wrap.classList.add("pinch-zooming");
+    }
+  }, { passive: true });
+  wrap.addEventListener("touchmove", e => {
+    if (e.touches.length !== 2 || !characterGraphViewport.pinch) return;
+    e.preventDefault();
+    const [t0, t1] = e.touches;
+    const dist = pinchDistance(t0, t1);
+    const center = pinchCenter(t0, t1);
+    const ratio = dist / Math.max(characterGraphViewport.pinch.startDistance, 1);
+    setCharacterGraphZoom(characterGraphViewport.pinch.startScale * ratio, { manual: true, anchorClientX: center.x, anchorClientY: center.y });
+    characterGraphViewport.pinch.lastCenter = center;
+  }, { passive: false });
+  const finishPinch = () => { characterGraphViewport.pinch = null; wrap.classList.remove("pinch-zooming"); };
+  wrap.addEventListener("touchend", e => { if (e.touches.length < 2) finishPinch(); }, { passive: true });
+  wrap.addEventListener("touchcancel", finishPinch, { passive: true });
+  $("characterGraphZoomInBtn")?.addEventListener("click", () => setCharacterGraphZoom((characterGraphViewport.scale || 1) * 1.2, { manual: true }));
+  $("characterGraphZoomOutBtn")?.addEventListener("click", () => setCharacterGraphZoom((characterGraphViewport.scale || 1) / 1.2, { manual: true }));
+  $("characterGraphFitBtn")?.addEventListener("click", () => resetCharacterGraphZoom());
+  $("characterGraphActualBtn")?.addEventListener("click", () => setCharacterGraphZoom(1, { manual: true }));
+  window.addEventListener("resize", () => {
+    if (characterGraphViewport.manual) applyCharacterGraphScale();
+    else fitCharacterGraphZoom({ force: true });
+  });
+}
+
 function editTimeLabel(label,x,y){
   showFloatingPanel(x,y,panel=>{
     const h=document.createElement("strong");h.textContent="時系列ラベル";
@@ -933,7 +1017,7 @@ function renderCharacterRelationGraph(){
   const svg=$("characterRelationSvg");if(!svg)return;const ns="http://www.w3.org/2000/svg",sheets=currentNovel.characterSheets,relations=currentNovel.characterRelations=normalizeCharacterRelations(currentNovel.characterRelations,sheets);
   const cols=Math.max(1,Math.ceil(Math.sqrt(sheets.length))),cellW=260,cellH=165,nodeW=158,nodeH=58,width=Math.max(420,cols*cellW+80),rows=Math.max(1,Math.ceil(sheets.length/cols)),height=Math.max(300,rows*cellH+90);
   sheets.forEach((sheet,i)=>{if(sheet.graphX==null||sheet.graphY==null){const col=i%cols,row=Math.floor(i/cols);sheet.graphX=45+col*cellW+cellW/2;sheet.graphY=45+row*cellH+cellH/2;}});
-  const maxX=Math.max(width,...sheets.map(s=>s.graphX+nodeW)),maxY=Math.max(height,...sheets.map(s=>s.graphY+nodeH));svg.innerHTML="";svg.setAttribute("viewBox",`0 0 ${maxX+40} ${maxY+40}`);svg.setAttribute("width",String(maxX+40));svg.setAttribute("height",String(maxY+40));
+  const maxX=Math.max(width,...sheets.map(s=>s.graphX+nodeW)),maxY=Math.max(height,...sheets.map(s=>s.graphY+nodeH));svg.innerHTML="";svg.setAttribute("viewBox",`0 0 ${maxX+40} ${maxY+40}`);svg.setAttribute("width",String(maxX+40));svg.setAttribute("height",String(maxY+40));characterGraphViewport.baseWidth=maxX+40;characterGraphViewport.baseHeight=maxY+40;initCharacterGraphZoomUI();applyCharacterGraphScale();fitCharacterGraphZoom();
   const defs=document.createElementNS(ns,"defs");relations.forEach(rel=>{["start","end"].forEach(side=>{const m=document.createElementNS(ns,"marker");m.setAttribute("id",`rel_${side}_${rel.id}`);m.setAttribute("markerWidth","10");m.setAttribute("markerHeight","7");m.setAttribute("refX",side==="end"?"9":"1");m.setAttribute("refY","3.5");m.setAttribute("orient","auto-start-reverse");const p=document.createElementNS(ns,"path");p.setAttribute("d","M0,0 L10,3.5 L0,7 z");p.setAttribute("fill",rel.color);m.appendChild(p);defs.appendChild(m);});});svg.appendChild(defs);const bg=document.createElementNS(ns,"rect");bg.setAttribute("width","100%");bg.setAttribute("height","100%");bg.setAttribute("fill","#fffdf8");svg.appendChild(bg);
   const pos=new Map(sheets.map(s=>[s.id,{cx:s.graphX,cy:s.graphY,x:s.graphX-nodeW/2,y:s.graphY-nodeH/2}]));
   const pairGroups=new Map();

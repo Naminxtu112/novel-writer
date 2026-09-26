@@ -129,8 +129,8 @@ dialog::backdrop{background:rgba(0,0,0,.28)}
 /* v7.2: draggable flow nodes + character relationship graph */
 .flow-node-group{cursor:grab;touch-action:none;user-select:none}
 .flow-node-group:active{cursor:grabbing}
-.character-relation-preview{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;margin-bottom:14px}
-.character-relation-svg{display:block;min-width:100%;height:auto}
+.character-relation-preview{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;margin-bottom:14px;min-height:320px;touch-action:pan-x pan-y;overscroll-behavior:contain}
+.character-relation-svg{display:block;min-width:100%;height:auto;max-width:none}
 .character-relation-list{display:grid;gap:8px}
 .character-relation-row{display:grid;grid-template-columns:auto minmax(120px,1fr) minmax(120px,1fr) minmax(120px,1fr) auto auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px}
 .character-relation-row select,.character-relation-row input[type="text"],.character-relation-row input:not([type]){min-width:0;width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff}
@@ -149,7 +149,7 @@ dialog::backdrop{background:rgba(0,0,0,.28)}
 .flow-link-path{pointer-events:stroke;cursor:pointer}
 .time-label-group text,.flow-node-group text,.character-graph-node text{pointer-events:none;user-select:none}
 .character-relation-preview{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;min-height:320px}
-.character-relation-svg{display:block;min-width:100%;height:auto}
+.character-relation-svg{display:block;min-width:100%;height:auto;max-width:none}
 .character-graph-node,.relation-edge{user-select:none}
 .relation-mode-hint{min-height:1.4em;margin-top:8px;color:var(--accent2)}
 button.active-mode{outline:2px solid var(--accent2);background:#eef5f3}
@@ -172,3 +172,8 @@ button.active-mode{outline:2px solid var(--accent2);background:#eef5f3}
   .direct-edit-panel button{min-height:44px}
   .direct-edit-panel input,.direct-edit-panel select,.direct-edit-panel textarea{font-size:16px}
 }
+
+.graph-zoom-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.zoom-label{display:inline-flex;align-items:center;justify-content:center;min-width:4.2em;padding:0 4px}
+.character-relation-preview.pinch-zooming{outline:2px solid #c9d8da}
+.touch-selected rect,.touch-selected path,.touch-selected circle{filter:drop-shadow(0 0 0.35rem rgba(47,93,98,.35))}
