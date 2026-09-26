@@ -888,17 +888,25 @@ function renderCharacterRelationGraph(){
   const pos=new Map(sheets.map(s=>[s.id,{cx:s.graphX,cy:s.graphY,x:s.graphX-nodeW/2,y:s.graphY-nodeH/2}]));
   const pairGroups=new Map();
   relations.forEach(rel=>{const key=[rel.from,rel.to].sort().join("::");if(!pairGroups.has(key))pairGroups.set(key,[]);pairGroups.get(key).push(rel);});
+  // 同じ2キャラ間の複数関係は、方向にかかわらず画面上のY方向へ固定間隔で分離する。
+  // これにより A→B / B→A のラベルが同じ位置に重ならない。
   const relationOffset=new Map();
-  pairGroups.forEach(group=>{const gap=34;group.forEach((rel,i)=>relationOffset.set(rel.id,(i-(group.length-1)/2)*gap));});
+  pairGroups.forEach(group=>{
+    const labelGap=50;
+    group.forEach((rel,i)=>{
+      const slot=i-(group.length-1)/2;
+      relationOffset.set(rel.id,{labelY:slot*labelGap,curveY:slot*72});
+    });
+  });
   relations.forEach(rel=>{
     const a=pos.get(rel.from),b=pos.get(rel.to);if(!a||!b)return;
-    const dx=b.cx-a.cx,dy=b.cy-a.cy,len=Math.hypot(dx,dy)||1;
+    const dx=b.cx-a.cx,dy=b.cy-a.cy;
     const scale=1/Math.max(Math.abs(dx)/(nodeW/2),Math.abs(dy)/(nodeH/2),.0001);
     const x1=a.cx+dx*scale,y1=a.cy+dy*scale,x2=b.cx-dx*scale,y2=b.cy-dy*scale;
-    const nx=-dy/len,ny=dx/len,offset=relationOffset.get(rel.id)||0;
+    const offsets=relationOffset.get(rel.id)||{labelY:0,curveY:0};
     const midX=(x1+x2)/2,midY=(y1+y2)/2;
-    const controlX=midX+nx*offset*2,controlY=midY+ny*offset*2;
-    const labelX=midX+nx*offset,labelY=midY+ny*offset;
+    const controlX=midX,controlY=midY+offsets.curveY;
+    const labelX=midX,labelY=midY+offsets.labelY;
     const pathD=`M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`;
     const g=document.createElementNS(ns,"g");g.classList.add("relation-edge");g.style.cursor="pointer";
     const line=document.createElementNS(ns,"path");line.setAttribute("d",pathD);line.setAttribute("fill","none");line.setAttribute("stroke",rel.color);line.setAttribute("stroke-width","2.6");
