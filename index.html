@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Novel Deadline Editor</title>
-  <link rel="stylesheet" href="./style.css?v=6.1.0">
+  <link rel="stylesheet" href="./style.css?v=7.1.0">
 </head>
 <body>
   <div id="toast" class="toast hidden"></div>
 
   <section id="authView" class="center-view">
     <div class="card auth-card">
-      <h1>Novel Deadline Editor <span class="build-label">v6.1</span></h1>
+      <h1>Novel Deadline Editor <span class="build-label">v7.1</span></h1>
       <p class="muted">ログインIDと編集パスワードで作品を同期します。</p>
       <label>ログインID<input id="loginId" autocomplete="username" placeholder="例: namin"></label>
       <label>編集パスワード<input id="loginPassword" type="password" autocomplete="current-password"></label>
@@ -24,7 +24,7 @@
 
   <section id="dashboardView" class="hidden">
     <header class="simple-header">
-      <div><strong>作品一覧</strong><span id="currentUserLabel" class="muted"></span><span class="build-label">v6.1</span></div>
+      <div><strong>作品一覧</strong><span id="currentUserLabel" class="muted"></span><span class="build-label">v7.1</span></div>
       <button id="logoutBtn">ログアウト</button>
     </header>
     <main class="dashboard">
@@ -70,12 +70,79 @@
 
     <main id="outlinePage" class="editor-wrap workspace-page hidden">
       <div class="novel-title-row"><strong>アウトライン</strong><span class="muted">任意。本文・進捗・TXT出力には影響しません。</span></div>
-      <div id="outlineEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="プロット、章構成、伏線、メモなど"></div>
+      <section class="tool-card">
+        <h2>アウトラインメモ</h2>
+        <div id="outlineEditor" class="editor auxiliary-editor compact-editor" contenteditable="true" spellcheck="false" data-placeholder="プロット、章構成、伏線、メモなど"></div>
+      </section>
+
+      <section class="tool-card">
+        <div class="tool-card-head">
+          <div>
+            <h2>時系列フローチャート</h2>
+            <p class="small muted">複数ラインの並行進行、分岐・合流に対応。イベントは基本的に下方向へ流れ、図上のノードはドラッグで自由に移動できます。</p>
+          </div>
+          <div class="tool-actions wrap-actions">
+            <button type="button" id="addFlowLaneBtn">＋ ライン追加</button>
+            <button type="button" id="addFlowNodeBtn">＋ イベント追加</button>
+            <button type="button" id="addFlowLinkBtn">＋ 接続追加</button>
+            <button type="button" id="exportFlowPngBtn" class="primary">PNG出力</button>
+          </div>
+        </div>
+
+        <div class="flow-lane-list" id="flowLaneList"></div>
+
+        <div class="flow-preview-wrap">
+          <svg id="flowchartSvg" class="flowchart-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+
+        <div class="flow-edit-grid">
+          <section class="flow-edit-panel">
+            <h3>イベント一覧</h3>
+            <div id="flowNodeList"></div>
+          </section>
+          <section class="flow-edit-panel">
+            <h3>接続一覧</h3>
+            <div id="flowLinkList"></div>
+          </section>
+        </div>
+      </section>
     </main>
 
     <main id="charactersPage" class="editor-wrap workspace-page hidden">
       <div class="novel-title-row"><strong>キャラ設定</strong><span class="muted">任意。本文・進捗・TXT出力には影響しません。</span></div>
-      <div id="charactersEditor" class="editor auxiliary-editor" contenteditable="true" spellcheck="false" data-placeholder="人物名、年齢、関係性、口調、外見、設定メモなど"></div>
+      <section class="tool-card">
+        <div class="tool-card-head">
+          <div>
+            <h2>キャラクターシート</h2>
+            <p class="small muted">名前、性格、容姿、背景、役割、メモの初期項目つき。項目名も内容も編集できます。</p>
+          </div>
+          <div class="tool-actions">
+            <button type="button" id="addCharacterBtn" class="primary">＋ キャラ追加</button>
+          </div>
+        </div>
+        <div id="characterSheets" class="character-sheets"></div>
+      </section>
+
+      <section class="tool-card">
+        <div class="tool-card-head">
+          <div>
+            <h2>キャラクター関係図</h2>
+            <p class="small muted">キャラ同士を線で結び、関係名を付けられます。必要なら矢印にもできます。</p>
+          </div>
+          <div class="tool-actions">
+            <button type="button" id="addCharacterRelationBtn" class="primary">＋ 関係追加</button>
+          </div>
+        </div>
+        <div class="character-relation-preview">
+          <svg id="characterRelationSvg" class="character-relation-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <div id="characterRelationList" class="character-relation-list"></div>
+      </section>
+
+      <section class="tool-card">
+        <h2>自由メモ</h2>
+        <div id="charactersEditor" class="editor auxiliary-editor compact-editor" contenteditable="true" spellcheck="false" data-placeholder="関係図メモ、全体メモ、管理用メモなど"></div>
+      </section>
     </main>
 
     <footer id="statusbar" class="statusbar">
@@ -139,6 +206,6 @@
     <menu><button value="cancel">閉じる</button></menu>
   </form></dialog>
 
-  <script type="module" src="./app.js?v=6.1.0"></script>
+  <script type="module" src="./app.js?v=7.1.0"></script>
 </body>
 </html>
