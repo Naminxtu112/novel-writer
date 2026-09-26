@@ -67,8 +67,8 @@ mark.proof-repeat{background:var(--info)}
 .wrap-actions{flex-wrap:wrap;justify-content:flex-end}
 .flow-lane-list{display:grid;gap:8px;margin:12px 0 18px}
 .flow-lane-row{display:flex;gap:8px;align-items:center}
-.flow-preview-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px}
-.flowchart-svg{display:block;min-width:100%;height:auto}
+.flow-preview-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;min-height:320px;touch-action:pan-x pan-y;overscroll-behavior:contain}
+.flowchart-svg{display:block;min-width:100%;height:auto;max-width:none}
 .flow-edit-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-top:16px}
 .flow-edit-panel{border:1px solid var(--line);border-radius:10px;background:#fbf8f1;padding:12px}
 .flow-edit-panel h3{margin:0 0 10px}
@@ -177,3 +177,5 @@ button.active-mode{outline:2px solid var(--accent2);background:#eef5f3}
 .zoom-label{display:inline-flex;align-items:center;justify-content:center;min-width:4.2em;padding:0 4px}
 .character-relation-preview.pinch-zooming{outline:2px solid #c9d8da}
 .touch-selected rect,.touch-selected path,.touch-selected circle{filter:drop-shadow(0 0 0.35rem rgba(47,93,98,.35))}
+
+.flow-preview-wrap.pinch-zooming{outline:2px solid #c9d8da}

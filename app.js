@@ -826,6 +826,87 @@ function deleteFlowNode(nodeId) {
   currentNovel.outlineFlow.links=currentNovel.outlineFlow.links.filter(l=>l.from!==nodeId&&l.to!==nodeId);
   markNovelDirty(); renderFlowSvg();
 }
+const flowchartViewport = { scale: 1, minScale: 0.35, maxScale: 3, baseWidth: 0, baseHeight: 0, manual: false, pinch: null };
+function flowPreviewWrap() { return document.querySelector("#outlinePage .flow-preview-wrap"); }
+function applyFlowchartScale() {
+  const svg = $("flowchartSvg"), label = $("flowchartZoomLabel");
+  if (!svg || !flowchartViewport.baseWidth || !flowchartViewport.baseHeight) return;
+  const scale = clamp(flowchartViewport.scale || 1, flowchartViewport.minScale, flowchartViewport.maxScale);
+  flowchartViewport.scale = scale;
+  svg.style.width = `${Math.round(flowchartViewport.baseWidth * scale)}px`;
+  svg.style.height = `${Math.round(flowchartViewport.baseHeight * scale)}px`;
+  svg.style.maxWidth = "none";
+  if (label) label.textContent = `${Math.round(scale * 100)}%`;
+}
+function setFlowchartZoom(nextScale, { manual = true, anchorClientX = null, anchorClientY = null } = {}) {
+  const wrap = flowPreviewWrap(), svg = $("flowchartSvg");
+  if (!wrap || !svg || !flowchartViewport.baseWidth) return;
+  const prevScale = flowchartViewport.scale || 1;
+  const rect = wrap.getBoundingClientRect();
+  const viewportX = anchorClientX == null ? wrap.clientWidth / 2 : anchorClientX - rect.left;
+  const viewportY = anchorClientY == null ? wrap.clientHeight / 2 : anchorClientY - rect.top;
+  const worldX = (wrap.scrollLeft + viewportX) / prevScale;
+  const worldY = (wrap.scrollTop + viewportY) / prevScale;
+  flowchartViewport.scale = clamp(nextScale, flowchartViewport.minScale, flowchartViewport.maxScale);
+  flowchartViewport.manual = manual;
+  applyFlowchartScale();
+  wrap.scrollLeft = Math.max(0, worldX * flowchartViewport.scale - viewportX);
+  wrap.scrollTop = Math.max(0, worldY * flowchartViewport.scale - viewportY);
+}
+function fitFlowchartZoom({ force = false } = {}) {
+  const wrap = flowPreviewWrap();
+  if (!wrap || !flowchartViewport.baseWidth) return;
+  if (flowchartViewport.manual && !force) return;
+  const fitW = (wrap.clientWidth - 18) / flowchartViewport.baseWidth;
+  const fitH = (wrap.clientHeight - 18) / flowchartViewport.baseHeight;
+  const fit = clamp(Math.min(1, fitW || 1, fitH || 1), flowchartViewport.minScale, 1);
+  setFlowchartZoom(fit, { manual: false });
+}
+function resetFlowchartZoom() { flowchartViewport.manual = false; fitFlowchartZoom({ force: true }); }
+function initFlowchartZoomUI() {
+  const wrap = flowPreviewWrap();
+  if (!wrap || wrap.dataset.zoomReady === "1") return;
+  wrap.dataset.zoomReady = "1";
+  wrap.addEventListener("wheel", e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    setFlowchartZoom((flowchartViewport.scale || 1) * factor, { manual: true, anchorClientX: e.clientX, anchorClientY: e.clientY });
+  }, { passive: false });
+  wrap.addEventListener("touchstart", e => {
+    if (e.touches.length === 2) {
+      const [t0, t1] = e.touches;
+      flowchartViewport.pinch = {
+        startScale: flowchartViewport.scale || 1,
+        startDistance: pinchDistance(t0, t1),
+        lastCenter: pinchCenter(t0, t1)
+      };
+      wrap.classList.add("pinch-zooming");
+    }
+  }, { passive: true });
+  wrap.addEventListener("touchmove", e => {
+    if (e.touches.length !== 2 || !flowchartViewport.pinch) return;
+    e.preventDefault();
+    const [t0, t1] = e.touches;
+    const dist = pinchDistance(t0, t1);
+    const center = pinchCenter(t0, t1);
+    const ratio = dist / Math.max(flowchartViewport.pinch.startDistance, 1);
+    setFlowchartZoom(flowchartViewport.pinch.startScale * ratio, { manual: true, anchorClientX: center.x, anchorClientY: center.y });
+    flowchartViewport.pinch.lastCenter = center;
+  }, { passive: false });
+  const finishPinch = () => { flowchartViewport.pinch = null; wrap.classList.remove("pinch-zooming"); };
+  wrap.addEventListener("touchend", e => { if (e.touches.length < 2) finishPinch(); }, { passive: true });
+  wrap.addEventListener("touchcancel", finishPinch, { passive: true });
+  $("flowchartZoomInBtn")?.addEventListener("click", () => setFlowchartZoom((flowchartViewport.scale || 1) * 1.2, { manual: true }));
+  $("flowchartZoomOutBtn")?.addEventListener("click", () => setFlowchartZoom((flowchartViewport.scale || 1) / 1.2, { manual: true }));
+  $("flowchartFitBtn")?.addEventListener("click", () => resetFlowchartZoom());
+  $("flowchartActualBtn")?.addEventListener("click", () => setFlowchartZoom(1, { manual: true }));
+  window.addEventListener("resize", () => {
+    if (flowchartViewport.manual) applyFlowchartScale();
+    else fitFlowchartZoom({ force: true });
+  });
+}
+
 const characterGraphViewport = { scale: 1, minScale: 0.35, maxScale: 3, baseWidth: 0, baseHeight: 0, manual: false, pinch: null };
 function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
 function relationPreviewWrap() { return document.querySelector("#charactersPage .character-relation-preview"); }
@@ -931,7 +1012,7 @@ function buildFlowLayout(flow){
 }
 function renderFlowSvg(){
   const svg=$("flowchartSvg"),flow=currentNovel.outlineFlow=normalizeFlow(currentNovel.outlineFlow),L=buildFlowLayout(flow),ns="http://www.w3.org/2000/svg";
-  svg.innerHTML="";svg.setAttribute("viewBox",`0 0 ${L.width} ${L.height}`);svg.setAttribute("width",String(L.width));svg.setAttribute("height",String(L.height));
+  svg.innerHTML="";svg.setAttribute("viewBox",`0 0 ${L.width} ${L.height}`);svg.setAttribute("width",String(L.width));svg.setAttribute("height",String(L.height));flowchartViewport.baseWidth=L.width;flowchartViewport.baseHeight=L.height;initFlowchartZoomUI();applyFlowchartScale();fitFlowchartZoom();
   const defs=document.createElementNS(ns,"defs"),marker=document.createElementNS(ns,"marker");marker.setAttribute("id","arrowhead");marker.setAttribute("markerWidth","10");marker.setAttribute("markerHeight","7");marker.setAttribute("refX","9");marker.setAttribute("refY","3.5");marker.setAttribute("orient","auto");const ap=document.createElementNS(ns,"path");ap.setAttribute("d","M0,0 L10,3.5 L0,7 z");ap.setAttribute("fill","#2f5d62");marker.appendChild(ap);defs.appendChild(marker);svg.appendChild(defs);
   const bg=document.createElementNS(ns,"rect");bg.setAttribute("width",String(L.width));bg.setAttribute("height",String(L.height));bg.setAttribute("fill","#fffdf8");svg.appendChild(bg);
   const axis=document.createElementNS(ns,"line");axis.setAttribute("x1","125");axis.setAttribute("x2","125");axis.setAttribute("y1","75");axis.setAttribute("y2",String(L.height-25));axis.setAttribute("stroke","#cfc6b8");axis.setAttribute("stroke-width","2");svg.appendChild(axis);
