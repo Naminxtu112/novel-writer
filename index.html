@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Novel Deadline Editor</title>
-  <link rel="stylesheet" href="./style.css?v=7.4.0">
+  <link rel="stylesheet" href="./style.css?v=7.6.0">
 </head>
 <body>
   <div id="toast" class="toast hidden"></div>
@@ -92,7 +92,7 @@
           <svg id="flowchartSvg" class="flowchart-svg" xmlns="http://www.w3.org/2000/svg"></svg>
         </div>
 
-        <p class="small muted direct-edit-help">ライン名はダブルクリックで編集。ライン内を右クリックするとイベント追加。イベントはドラッグ移動、右クリックで編集・接続・削除できます。左端の時系列ラベルもドラッグできます。</p>
+        <p class="small muted direct-edit-help">PC：ライン名はダブルクリック、空白は右クリック。スマホ：1回タップで選択、もう1回タップまたは長押しで編集。ライン空白の長押しでイベント追加。イベント／時系列ラベルはドラッグ移動できます。</p>
       </section>
     </main>
 
@@ -115,7 +115,7 @@
         <div class="tool-card-head">
           <div>
             <h2>キャラクター関係図</h2>
-            <p class="small muted">キャラをドラッグして配置。関係追加後に2人を順にクリックするか、キャラを右クリックして接続を開始します。関係線は右クリック／ダブルクリックで直接編集できます。</p>
+            <p class="small muted">キャラをドラッグして配置。PCは右クリック／ダブルクリックで編集。スマホは1回タップで選択、もう1回タップまたは長押しで編集できます。関係追加後は2人を順にタップして接続できます。</p>
           </div>
           <div class="tool-actions">
             <button type="button" id="addCharacterRelationBtn" class="primary">＋ 関係追加</button>
@@ -194,6 +194,6 @@
     <menu><button value="cancel">閉じる</button></menu>
   </form></dialog>
 
-  <script type="module" src="./app.js?v=7.4.0"></script>
+  <script type="module" src="./app.js?v=7.6.0"></script>
 </body>
 </html>

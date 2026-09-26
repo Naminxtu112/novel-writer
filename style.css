@@ -160,3 +160,15 @@ button.active-mode{outline:2px solid var(--accent2);background:#eef5f3}
 .relation-edge text{pointer-events:none}
 .relation-edge rect{pointer-events:none}
 @media(max-width:700px){.direct-edit-panel{left:12px!important;right:12px!important;width:auto}.arrow-options{flex-direction:column}}
+
+
+/* v7.6 mobile/touch diagram controls */
+.touch-selected rect{stroke:var(--accent)!important;stroke-width:3px!important}
+.touch-selected.flow-link-path{stroke:var(--accent2)!important;stroke-width:4px!important}
+.flow-link-hit{pointer-events:stroke;cursor:pointer}
+@media (pointer:coarse){
+  .flow-node-group,.time-label-group,.character-graph-node,.relation-edge,.flow-link-hit{cursor:default}
+  .character-relation-preview,.flow-preview-wrap{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  .direct-edit-panel button{min-height:44px}
+  .direct-edit-panel input,.direct-edit-panel select,.direct-edit-panel textarea{font-size:16px}
+}
