@@ -826,7 +826,7 @@ function deleteFlowNode(nodeId) {
   currentNovel.outlineFlow.links=currentNovel.outlineFlow.links.filter(l=>l.from!==nodeId&&l.to!==nodeId);
   markNovelDirty(); renderFlowSvg();
 }
-const flowchartViewport = { scale: 1, minScale: 0.35, maxScale: 3, baseWidth: 0, baseHeight: 0, manual: false, pinch: null };
+const flowchartViewport = { scale: 1, minScale: 0.08, maxScale: 4, baseWidth: 0, baseHeight: 0, manual: false, pinch: null, pointers: new Map() };
 function flowPreviewWrap() { return document.querySelector("#outlinePage .flow-preview-wrap"); }
 function applyFlowchartScale() {
   const svg = $("flowchartSvg"), label = $("flowchartZoomLabel");
@@ -855,48 +855,75 @@ function setFlowchartZoom(nextScale, { manual = true, anchorClientX = null, anch
 }
 function fitFlowchartZoom({ force = false } = {}) {
   const wrap = flowPreviewWrap();
-  if (!wrap || !flowchartViewport.baseWidth) return;
+  if (!wrap || !flowchartViewport.baseWidth || !flowchartViewport.baseHeight) return;
   if (flowchartViewport.manual && !force) return;
-  const fitW = (wrap.clientWidth - 18) / flowchartViewport.baseWidth;
-  const fitH = (wrap.clientHeight - 18) / flowchartViewport.baseHeight;
-  const fit = clamp(Math.min(1, fitW || 1, fitH || 1), flowchartViewport.minScale, 1);
+  const innerW = Math.max(120, wrap.clientWidth - 22);
+  const innerH = Math.max(180, wrap.clientHeight - 22);
+  const fitW = innerW / flowchartViewport.baseWidth;
+  const fitH = innerH / flowchartViewport.baseHeight;
+  const fit = clamp(Math.min(fitW, fitH, 1), flowchartViewport.minScale, 1);
   setFlowchartZoom(fit, { manual: false });
+  wrap.scrollLeft = 0;
+  wrap.scrollTop = 0;
 }
 function resetFlowchartZoom() { flowchartViewport.manual = false; fitFlowchartZoom({ force: true }); }
 function initFlowchartZoomUI() {
   const wrap = flowPreviewWrap();
   if (!wrap || wrap.dataset.zoomReady === "1") return;
   wrap.dataset.zoomReady = "1";
+
   wrap.addEventListener("wheel", e => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
     const factor = Math.exp(-e.deltaY * 0.0015);
     setFlowchartZoom((flowchartViewport.scale || 1) * factor, { manual: true, anchorClientX: e.clientX, anchorClientY: e.clientY });
   }, { passive: false });
-  wrap.addEventListener("touchstart", e => {
-    if (e.touches.length === 2) {
-      const [t0, t1] = e.touches;
+
+  // v7.9: two-finger pinch using Pointer Events.
+  // This is independent of browser page zoom and works directly on the flowchart viewport.
+  const pointerCenter = () => {
+    const pts = [...flowchartViewport.pointers.values()];
+    if (pts.length < 2) return null;
+    return { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 };
+  };
+  const pointerDistance = () => {
+    const pts = [...flowchartViewport.pointers.values()];
+    if (pts.length < 2) return 0;
+    return Math.hypot(pts[1].x-pts[0].x, pts[1].y-pts[0].y);
+  };
+  wrap.addEventListener("pointerdown", e => {
+    if (e.pointerType !== "touch") return;
+    flowchartViewport.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if (flowchartViewport.pointers.size === 2) {
       flowchartViewport.pinch = {
         startScale: flowchartViewport.scale || 1,
-        startDistance: pinchDistance(t0, t1),
-        lastCenter: pinchCenter(t0, t1)
+        startDistance: Math.max(pointerDistance(),1)
       };
       wrap.classList.add("pinch-zooming");
     }
-  }, { passive: true });
-  wrap.addEventListener("touchmove", e => {
-    if (e.touches.length !== 2 || !flowchartViewport.pinch) return;
-    e.preventDefault();
-    const [t0, t1] = e.touches;
-    const dist = pinchDistance(t0, t1);
-    const center = pinchCenter(t0, t1);
-    const ratio = dist / Math.max(flowchartViewport.pinch.startDistance, 1);
-    setFlowchartZoom(flowchartViewport.pinch.startScale * ratio, { manual: true, anchorClientX: center.x, anchorClientY: center.y });
-    flowchartViewport.pinch.lastCenter = center;
-  }, { passive: false });
-  const finishPinch = () => { flowchartViewport.pinch = null; wrap.classList.remove("pinch-zooming"); };
-  wrap.addEventListener("touchend", e => { if (e.touches.length < 2) finishPinch(); }, { passive: true });
-  wrap.addEventListener("touchcancel", finishPinch, { passive: true });
+  }, true);
+  wrap.addEventListener("pointermove", e => {
+    if (e.pointerType !== "touch" || !flowchartViewport.pointers.has(e.pointerId)) return;
+    flowchartViewport.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if (flowchartViewport.pointers.size === 2 && flowchartViewport.pinch) {
+      e.preventDefault();
+      e.stopPropagation();
+      const center=pointerCenter();
+      const ratio=pointerDistance()/Math.max(flowchartViewport.pinch.startDistance,1);
+      setFlowchartZoom(flowchartViewport.pinch.startScale*ratio,{manual:true,anchorClientX:center.x,anchorClientY:center.y});
+    }
+  }, { passive:false, capture:true });
+  const endPointer = e => {
+    if (e.pointerType !== "touch") return;
+    flowchartViewport.pointers.delete(e.pointerId);
+    if (flowchartViewport.pointers.size < 2) {
+      flowchartViewport.pinch=null;
+      wrap.classList.remove("pinch-zooming");
+    }
+  };
+  wrap.addEventListener("pointerup",endPointer,true);
+  wrap.addEventListener("pointercancel",endPointer,true);
+
   $("flowchartZoomInBtn")?.addEventListener("click", () => setFlowchartZoom((flowchartViewport.scale || 1) * 1.2, { manual: true }));
   $("flowchartZoomOutBtn")?.addEventListener("click", () => setFlowchartZoom((flowchartViewport.scale || 1) / 1.2, { manual: true }));
   $("flowchartFitBtn")?.addEventListener("click", () => resetFlowchartZoom());
