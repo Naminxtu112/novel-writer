@@ -93,7 +93,8 @@ function createDefaultFlow() {
   return {
     lanes: [{ id: uid("lane"), name: "ライン1" }],
     nodes: [],
-    links: []
+    links: [],
+    timeLabels: []
   };
 }
 function createCharacterSheet(index = 1) {
@@ -111,7 +112,10 @@ function normalizeCharacterRelations(relations, sheets) {
     from: r.from,
     to: r.to,
     label: r.label || "関係",
-    directed: Boolean(r.directed)
+    lineStyle: ["solid","dashed","dashdot"].includes(r.lineStyle) ? r.lineStyle : "solid",
+    color: /^#[0-9a-fA-F]{6}$/.test(r.color || "") ? r.color : "#6f6a61",
+    arrowStart: r.arrowStart === true,
+    arrowEnd: r.arrowEnd === true || Boolean(r.directed)
   }));
 }
 function normalizeFlow(flow) {
@@ -120,6 +124,7 @@ function normalizeFlow(flow) {
   if (!safe.lanes.length) safe.lanes = createDefaultFlow().lanes;
   safe.nodes = Array.isArray(safe.nodes) ? safe.nodes.filter(n => n && n.id) : [];
   safe.links = Array.isArray(safe.links) ? safe.links.filter(l => l && l.id) : [];
+  safe.timeLabels = Array.isArray(safe.timeLabels) ? safe.timeLabels.filter(x => x && x.id) : [];
   safe.lanes.forEach((lane, i) => { if (!lane.name) lane.name = `ライン${i + 1}`; });
   safe.nodes.forEach((node, i) => {
     if (!safe.lanes.some(l => l.id === node.laneId)) node.laneId = safe.lanes[0].id;
@@ -127,6 +132,10 @@ function normalizeFlow(flow) {
     node.text = node.text || "";
     node.offsetX = Number(node.offsetX) || 0;
     node.offsetY = Number(node.offsetY) || 0;
+  });
+  safe.timeLabels.forEach((label, i) => {
+    label.text = label.text || `時系列${i + 1}`;
+    label.y = Number(label.y) || (120 + i * 130);
   });
   safe.links = safe.links.filter(link => safe.nodes.some(n => n.id === link.from) && safe.nodes.some(n => n.id === link.to));
   return safe;
@@ -137,6 +146,8 @@ function normalizeCharacterSheets(sheets) {
   if (!out.length) out = [createCharacterSheet(1)];
   out.forEach((sheet, index) => {
     if (!sheet.title) sheet.title = `キャラ${index + 1}`;
+    sheet.graphX = Number.isFinite(Number(sheet.graphX)) ? Number(sheet.graphX) : null;
+    sheet.graphY = Number.isFinite(Number(sheet.graphY)) ? Number(sheet.graphY) : null;
     const fields = Array.isArray(sheet.fields) ? sheet.fields.filter(f => f && f.id) : [];
     if (!fields.length) {
       sheet.fields = defaultCharacterFieldLabels.map(label => ({ id: uid("field"), label, value: "" }));
@@ -679,297 +690,123 @@ function markNovelDirty() {
   scheduleSave();
 }
 
+function svgPoint(svg, clientX, clientY) {
+  const pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+  const ctm = svg.getScreenCTM();
+  return ctm ? pt.matrixTransform(ctm.inverse()) : { x: clientX, y: clientY };
+}
+function showFloatingPanel(x, y, build) {
+  let panel = document.getElementById("directEditPanel");
+  if (!panel) {
+    panel = document.createElement("div"); panel.id = "directEditPanel"; panel.className = "direct-edit-panel hidden";
+    document.body.appendChild(panel);
+  }
+  panel.innerHTML = ""; build(panel);
+  panel.style.left = `${Math.min(x, window.innerWidth - 340)}px`;
+  panel.style.top = `${Math.min(y, window.innerHeight - 420)}px`;
+  panel.classList.remove("hidden");
+  const close = ev => {
+    if (!panel.contains(ev.target)) { panel.classList.add("hidden"); document.removeEventListener("pointerdown", close, true); }
+  };
+  setTimeout(() => document.addEventListener("pointerdown", close, true), 0);
+  return panel;
+}
+function panelButton(text, cls, fn) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = text; if (cls) b.className = cls; b.onclick = fn; return b;
+}
+
 function addFlowLane() {
   currentNovel.outlineFlow.lanes.push({ id: uid("lane"), name: `ライン${currentNovel.outlineFlow.lanes.length + 1}` });
-  markNovelDirty();
-  renderFlowEditor();
+  markNovelDirty(); renderFlowEditor();
 }
 function deleteFlowLane(laneId) {
   if (currentNovel.outlineFlow.lanes.length <= 1) { toast("最低1本のラインは残してください。"); return; }
   const laneName = currentNovel.outlineFlow.lanes.find(l => l.id === laneId)?.name || "このライン";
   if (!confirm(`「${laneName}」を削除します。ライン上のイベントと接続も削除されます。`)) return;
   currentNovel.outlineFlow.lanes = currentNovel.outlineFlow.lanes.filter(l => l.id !== laneId);
-  const removedNodeIds = currentNovel.outlineFlow.nodes.filter(n => n.laneId === laneId).map(n => n.id);
+  const removed = currentNovel.outlineFlow.nodes.filter(n => n.laneId === laneId).map(n => n.id);
   currentNovel.outlineFlow.nodes = currentNovel.outlineFlow.nodes.filter(n => n.laneId !== laneId);
-  currentNovel.outlineFlow.links = currentNovel.outlineFlow.links.filter(link => !removedNodeIds.includes(link.from) && !removedNodeIds.includes(link.to));
-  markNovelDirty();
-  renderFlowEditor();
+  currentNovel.outlineFlow.links = currentNovel.outlineFlow.links.filter(l => !removed.includes(l.from) && !removed.includes(l.to));
+  markNovelDirty(); renderFlowEditor();
 }
-function addFlowNode() {
-  const flow = currentNovel.outlineFlow;
-  const lane = flow.lanes[0];
-  const maxRow = Math.max(0, ...flow.nodes.filter(n => n.laneId === lane.id).map(n => Number(n.row) || 0));
-  flow.nodes.push({ id: uid("node"), laneId: lane.id, row: maxRow + 1, text: "", offsetX: 0, offsetY: 0 });
-  markNovelDirty();
-  renderFlowEditor();
+function addTimeLabel() {
+  const labels = currentNovel.outlineFlow.timeLabels || (currentNovel.outlineFlow.timeLabels = []);
+  labels.push({ id: uid("time"), text: `時系列${labels.length + 1}`, y: 120 + labels.length * 130 });
+  markNovelDirty(); renderFlowSvg();
+}
+function openLaneEditor(lane, x, y) {
+  showFloatingPanel(x, y, panel => {
+    const h=document.createElement("strong"); h.textContent="ライン編集";
+    const input=document.createElement("input"); input.value=lane.name; input.placeholder="ライン名";
+    const actions=document.createElement("div"); actions.className="panel-actions";
+    actions.append(panelButton("保存","primary",()=>{ lane.name=input.value.trim()||lane.name; dirtyNovel=true; panel.classList.add("hidden"); renderFlowSvg(); scheduleSave(); }), panelButton("ライン削除","danger",()=>{ panel.classList.add("hidden"); deleteFlowLane(lane.id); }));
+    panel.append(h,input,actions); input.focus(); input.select();
+  });
+}
+function openEventEditor({node=null,laneId,x,y,svgY=null}) {
+  const flow=currentNovel.outlineFlow;
+  const isNew=!node;
+  const lane=flow.lanes.find(l=>l.id===(node?.laneId||laneId)) || flow.lanes[0];
+  showFloatingPanel(x,y,panel=>{
+    const h=document.createElement("strong"); h.textContent=isNew?`${lane.name} にイベント追加`:"イベント編集";
+    const ta=document.createElement("textarea"); ta.placeholder="出来事・イベント"; ta.value=node?.text||"";
+    const actions=document.createElement("div"); actions.className="panel-actions";
+    const save=()=>{
+      if(isNew){
+        const row=Math.max(1,Math.round(((svgY||120)-100)/130)+1);
+        const baseY=100+(row-1)*130;
+        flow.nodes.push({id:uid("node"),laneId:lane.id,row,text:ta.value,offsetX:0,offsetY:(svgY||baseY)-baseY});
+      }else node.text=ta.value;
+      dirtyNovel=true; panel.classList.add("hidden"); renderFlowSvg(); scheduleSave();
+    };
+    actions.append(panelButton(isNew?"追加":"保存","primary",save));
+    if(!isNew){
+      const target=document.createElement("select");
+      const empty=document.createElement("option"); empty.value=""; empty.textContent="接続先を選択…"; target.appendChild(empty);
+      flow.nodes.filter(n=>n.id!==node.id).forEach(n=>{const o=document.createElement("option");o.value=n.id;o.textContent=`${flow.lanes.find(l=>l.id===n.laneId)?.name||"ライン"}: ${(n.text||"未入力").slice(0,22)}`;target.appendChild(o);});
+      const connect=panelButton("→ 接続追加","",()=>{ if(!target.value)return; flow.links.push({id:uid("link"),from:node.id,to:target.value}); dirtyNovel=true; panel.classList.add("hidden"); renderFlowSvg(); scheduleSave(); });
+      const del=panelButton("削除","danger",()=>{ panel.classList.add("hidden"); deleteFlowNode(node.id); });
+      panel.append(h,ta,target,actions); actions.append(connect,del);
+    } else panel.append(h,ta,actions);
+    ta.focus();
+  });
 }
 function deleteFlowNode(nodeId) {
-  currentNovel.outlineFlow.nodes = currentNovel.outlineFlow.nodes.filter(n => n.id !== nodeId);
-  currentNovel.outlineFlow.links = currentNovel.outlineFlow.links.filter(link => link.from !== nodeId && link.to !== nodeId);
-  markNovelDirty();
-  renderFlowEditor();
+  currentNovel.outlineFlow.nodes=currentNovel.outlineFlow.nodes.filter(n=>n.id!==nodeId);
+  currentNovel.outlineFlow.links=currentNovel.outlineFlow.links.filter(l=>l.from!==nodeId&&l.to!==nodeId);
+  markNovelDirty(); renderFlowSvg();
 }
-function addFlowLink() {
-  const nodes = currentNovel.outlineFlow.nodes;
-  if (nodes.length < 2) { toast("接続を作るには、先にイベントを2つ以上追加してください。"); return; }
-  currentNovel.outlineFlow.links.push({ id: uid("link"), from: nodes[0].id, to: nodes[1].id });
-  markNovelDirty();
-  renderFlowEditor();
-}
-function deleteFlowLink(linkId) {
-  currentNovel.outlineFlow.links = currentNovel.outlineFlow.links.filter(l => l.id !== linkId);
-  markNovelDirty();
-  renderFlowEditor();
-}
-function renderFlowEditor() {
-  const flow = currentNovel.outlineFlow = normalizeFlow(currentNovel.outlineFlow);
-
-  const laneBox = $("flowLaneList"); laneBox.innerHTML = "";
-  flow.lanes.forEach((lane, index) => {
-    const row = document.createElement("div"); row.className = "flow-lane-row";
-    const name = document.createElement("input"); name.className = "flow-small-input"; name.value = lane.name; name.placeholder = `ライン${index + 1}`;
-    name.oninput = e => { lane.name = e.target.value; dirtyNovel = true; renderFlowSvg(); scheduleSave(); };
-    const del = document.createElement("button"); del.type = "button"; del.textContent = "削除"; del.className = "danger";
-    del.onclick = () => deleteFlowLane(lane.id);
-    row.append(name, del); laneBox.appendChild(row);
-  });
-
-  const sortedNodes = [...flow.nodes].sort((a, b) => (a.row - b.row) || laneIndex(a.laneId) - laneIndex(b.laneId));
-  const nodeBox = $("flowNodeList"); nodeBox.innerHTML = "";
-  if (!sortedNodes.length) nodeBox.innerHTML = '<p class="muted small">イベントはまだありません。「イベント追加」で作れます。</p>';
-  sortedNodes.forEach((node, idx) => {
-    const card = document.createElement("div"); card.className = "flow-item-card";
-    const head = document.createElement("div"); head.className = "flow-item-head";
-    const title = document.createElement("strong"); title.textContent = `イベント${idx + 1}`;
-    const del = document.createElement("button"); del.type = "button"; del.textContent = "削除"; del.className = "danger"; del.onclick = () => deleteFlowNode(node.id);
-    head.append(title, del);
-    const meta = document.createElement("div"); meta.className = "flow-node-meta";
-    const laneSelect = document.createElement("select"); laneSelect.className = "flow-small-select";
-    flow.lanes.forEach(l => { const o = document.createElement("option"); o.value = l.id; o.textContent = l.name; laneSelect.appendChild(o); });
-    laneSelect.value = node.laneId; laneSelect.onchange = e => { node.laneId = e.target.value; dirtyNovel = true; renderFlowEditor(); scheduleSave(); };
-    const rowInput = document.createElement("input"); rowInput.className = "flow-small-input"; rowInput.type = "number"; rowInput.min = "1"; rowInput.step = "1"; rowInput.value = node.row;
-    rowInput.oninput = e => { node.row = Math.max(1, Number(e.target.value) || 1); dirtyNovel = true; renderFlowSvg(); scheduleSave(); };
-    const rowLabel = document.createElement("label"); rowLabel.textContent = "段"; rowLabel.appendChild(rowInput);
-    meta.append(laneSelect, rowLabel);
-    const text = document.createElement("textarea"); text.className = "flow-node-text"; text.placeholder = "出来事・イベント・分岐点など"; text.value = node.text;
-    text.oninput = e => { node.text = e.target.value; dirtyNovel = true; renderFlowSvg(); scheduleSave(); };
-    card.append(head, meta, text); nodeBox.appendChild(card);
-  });
-
-  const linkBox = $("flowLinkList"); linkBox.innerHTML = "";
-  if (!flow.links.length) linkBox.innerHTML = '<p class="muted small">接続はまだありません。分岐・合流させたいときに追加してください。</p>';
-  flow.links.forEach((link, idx) => {
-    const row = document.createElement("div"); row.className = "flow-link-row";
-    const from = document.createElement("select"); from.className = "flow-small-select";
-    const to = document.createElement("select"); to.className = "flow-small-select";
-    sortedNodes.forEach(node => {
-      const name = `${flow.lanes.find(l => l.id === node.laneId)?.name || "ライン"} / ${node.row} / ${(node.text || "未入力").slice(0, 14)}`;
-      const o1 = document.createElement("option"); o1.value = node.id; o1.textContent = name; from.appendChild(o1);
-      const o2 = document.createElement("option"); o2.value = node.id; o2.textContent = name; to.appendChild(o2);
-    });
-    from.value = link.from; to.value = link.to;
-    from.onchange = e => { link.from = e.target.value; dirtyNovel = true; renderFlowSvg(); scheduleSave(); };
-    to.onchange = e => { link.to = e.target.value; dirtyNovel = true; renderFlowSvg(); scheduleSave(); };
-    const del = document.createElement("button"); del.type = "button"; del.className = "danger"; del.textContent = "削除"; del.onclick = () => deleteFlowLink(link.id);
-    const label = document.createElement("span"); label.className = "muted small"; label.textContent = `接続${idx + 1}`;
-    row.append(label, from, to, del); linkBox.appendChild(row);
-  });
-
-  renderFlowSvg();
-}
-
-function wrapSvgText(text, maxChars = 12) {
-  const raw = (text || "").trim();
-  if (!raw) return ["未入力"];
-  const src = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  const out = [];
-  src.forEach(part => {
-    let rest = part;
-    while (rest.length > maxChars) {
-      out.push(rest.slice(0, maxChars));
-      rest = rest.slice(maxChars);
-    }
-    out.push(rest || " ");
-  });
-  return out.slice(0, 5);
-}
-function buildFlowLayout(flow) {
-  const laneWidth = 250;
-  const laneGap = 30;
-  const top = 100;
-  const headerY = 40;
-  const rowGap = 130;
-  const nodeWidth = 168;
-  const positions = new Map();
-  let maxRow = 1;
-
-  flow.nodes.forEach(node => {
-    maxRow = Math.max(maxRow, node.row || 1);
-    const lines = wrapSvgText(node.text);
-    const height = Math.max(56, 24 + lines.length * 18);
-    const laneIdx = flow.lanes.findIndex(l => l.id === node.laneId);
-    const x = 40 + laneIdx * (laneWidth + laneGap) + (laneWidth - nodeWidth) / 2 + (Number(node.offsetX) || 0);
-    const y = top + ((node.row || 1) - 1) * rowGap + (Number(node.offsetY) || 0);
-    positions.set(node.id, { x, y, width: nodeWidth, height, centerX: x + nodeWidth / 2, topY: y, bottomY: y + height, lines });
-  });
-
-  const naturalWidth = 80 + flow.lanes.length * laneWidth + Math.max(0, flow.lanes.length - 1) * laneGap;
-  const maxRight = Math.max(naturalWidth, ...[...positions.values()].map(p => p.x + p.width + 40));
-  const maxBottom = Math.max(top + maxRow * rowGap + 80, ...[...positions.values()].map(p => p.y + p.height + 60));
-  const width = Math.max(360, maxRight);
-  const height = Math.max(260, maxBottom);
-  return { laneWidth, laneGap, headerY, rowGap, nodeWidth, positions, width, height };
-}
-function renderFlowSvg() {
-  const svg = $("flowchartSvg");
-  const flow = currentNovel.outlineFlow = normalizeFlow(currentNovel.outlineFlow);
-  const { laneWidth, laneGap, headerY, positions, width, height } = buildFlowLayout(flow);
-  const ns = "http://www.w3.org/2000/svg";
-  svg.innerHTML = "";
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("width", String(width));
-  svg.setAttribute("height", String(height));
-
-  const defs = document.createElementNS(ns, "defs");
-  const marker = document.createElementNS(ns, "marker");
-  marker.setAttribute("id", "arrowhead");
-  marker.setAttribute("markerWidth", "10");
-  marker.setAttribute("markerHeight", "7");
-  marker.setAttribute("refX", "9");
-  marker.setAttribute("refY", "3.5");
-  marker.setAttribute("orient", "auto");
-  const arrowPath = document.createElementNS(ns, "path");
-  arrowPath.setAttribute("d", "M0,0 L10,3.5 L0,7 z");
-  arrowPath.setAttribute("fill", "#2f5d62");
-  marker.appendChild(arrowPath); defs.appendChild(marker); svg.appendChild(defs);
-
-  const bg = document.createElementNS(ns, "rect");
-  bg.setAttribute("x", "0"); bg.setAttribute("y", "0"); bg.setAttribute("width", String(width)); bg.setAttribute("height", String(height));
-  bg.setAttribute("fill", "#fffdf8"); svg.appendChild(bg);
-
-  flow.lanes.forEach((lane, index) => {
-    const x = 40 + index * (laneWidth + laneGap);
-    const titleBg = document.createElementNS(ns, "rect");
-    titleBg.setAttribute("x", String(x)); titleBg.setAttribute("y", "20"); titleBg.setAttribute("width", String(laneWidth)); titleBg.setAttribute("height", "38");
-    titleBg.setAttribute("rx", "12"); titleBg.setAttribute("fill", "#f1ebe1"); titleBg.setAttribute("stroke", "#d9d2c6");
-    svg.appendChild(titleBg);
-    const title = document.createElementNS(ns, "text");
-    title.setAttribute("x", String(x + laneWidth / 2)); title.setAttribute("y", String(headerY));
-    title.setAttribute("text-anchor", "middle"); title.setAttribute("font-size", "16"); title.setAttribute("font-family", "'Yu Mincho','Noto Serif JP',serif");
-    title.setAttribute("fill", "#183c40"); title.textContent = lane.name || `ライン${index + 1}`;
-    svg.appendChild(title);
-
-    const guide = document.createElementNS(ns, "line");
-    guide.setAttribute("x1", String(x + laneWidth / 2)); guide.setAttribute("y1", "68"); guide.setAttribute("x2", String(x + laneWidth / 2)); guide.setAttribute("y2", String(height - 28));
-    guide.setAttribute("stroke", "#ece5d9"); guide.setAttribute("stroke-width", "2"); guide.setAttribute("stroke-dasharray", "4 8");
-    svg.appendChild(guide);
-  });
-
-  flow.links.forEach(link => {
-    const a = positions.get(link.from), b = positions.get(link.to);
-    if (!a || !b) return;
-    const path = document.createElementNS(ns, "path");
-    const midY = Math.min(b.topY - 18, a.bottomY + 24);
-    let d;
-    if (Math.abs(a.centerX - b.centerX) < 2) {
-      d = `M ${a.centerX} ${a.bottomY} L ${b.centerX} ${b.topY}`;
-    } else {
-      d = `M ${a.centerX} ${a.bottomY} L ${a.centerX} ${midY} L ${b.centerX} ${midY} L ${b.centerX} ${b.topY}`;
-    }
-    path.setAttribute("d", d);
-    path.setAttribute("fill", "none"); path.setAttribute("stroke", "#2f5d62"); path.setAttribute("stroke-width", "2.5");
-    path.setAttribute("marker-end", "url(#arrowhead)"); svg.appendChild(path);
-  });
-
-  const nodes = [...flow.nodes].sort((a, b) => (a.row - b.row) || laneIndex(a.laneId) - laneIndex(b.laneId));
-  nodes.forEach(node => {
-    const pos = positions.get(node.id); if (!pos) return;
-    const g = document.createElementNS(ns, "g");
-    g.classList.add("flow-node-group");
-    g.dataset.nodeId = node.id;
-    g.style.cursor = "grab";
-    g.style.touchAction = "none";
-    const rect = document.createElementNS(ns, "rect");
-    rect.setAttribute("x", String(pos.x)); rect.setAttribute("y", String(pos.y)); rect.setAttribute("width", String(pos.width)); rect.setAttribute("height", String(pos.height));
-    rect.setAttribute("rx", "12"); rect.setAttribute("fill", "#ffffff"); rect.setAttribute("stroke", "#bfb6a8"); rect.setAttribute("stroke-width", "1.4");
-    g.appendChild(rect);
-    pos.lines.forEach((line, i) => {
-      const t = document.createElementNS(ns, "text");
-      t.setAttribute("x", String(pos.centerX));
-      t.setAttribute("y", String(pos.y + 24 + i * 18));
-      t.setAttribute("text-anchor", "middle");
-      t.setAttribute("font-size", "14");
-      t.setAttribute("font-family", "'Yu Mincho','Noto Serif JP',serif");
-      t.setAttribute("fill", "#222");
-      t.setAttribute("pointer-events", "none");
-      t.textContent = line;
-      g.appendChild(t);
-    });
-    attachFlowDrag(g, node, svg);
-    svg.appendChild(g);
+function editTimeLabel(label,x,y){
+  showFloatingPanel(x,y,panel=>{
+    const h=document.createElement("strong");h.textContent="時系列ラベル";
+    const input=document.createElement("input");input.value=label.text;
+    const actions=document.createElement("div");actions.className="panel-actions";
+    actions.append(panelButton("保存","primary",()=>{label.text=input.value.trim()||label.text;dirtyNovel=true;panel.classList.add("hidden");renderFlowSvg();scheduleSave();}),panelButton("削除","danger",()=>{currentNovel.outlineFlow.timeLabels=currentNovel.outlineFlow.timeLabels.filter(t=>t.id!==label.id);dirtyNovel=true;panel.classList.add("hidden");renderFlowSvg();scheduleSave();}));
+    panel.append(h,input,actions);input.focus();input.select();
   });
 }
-function svgPointerPoint(svg, evt) {
-  const pt = svg.createSVGPoint();
-  pt.x = evt.clientX; pt.y = evt.clientY;
-  const ctm = svg.getScreenCTM();
-  return ctm ? pt.matrixTransform(ctm.inverse()) : { x: evt.clientX, y: evt.clientY };
+function renderFlowEditor(){ currentNovel.outlineFlow=normalizeFlow(currentNovel.outlineFlow); renderFlowSvg(); }
+function wrapSvgText(text,maxChars=12){
+  const raw=(text||"").trim(); if(!raw)return["未入力"]; const src=raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),out=[];
+  src.forEach(part=>{let rest=part;while(rest.length>maxChars){out.push(rest.slice(0,maxChars));rest=rest.slice(maxChars)}out.push(rest||" ")});return out.slice(0,5);
 }
-function attachFlowDrag(group, node, svg) {
-  group.addEventListener("pointerdown", evt => {
-    evt.preventDefault();
-    const p0 = svgPointerPoint(svg, evt);
-    const start = { x: p0.x, y: p0.y, ox: Number(node.offsetX) || 0, oy: Number(node.offsetY) || 0 };
-    group.style.cursor = "grabbing";
-    const move = moveEvt => {
-      const p = svgPointerPoint(svg, moveEvt);
-      const laneWidth = 250, laneGap = 30, nodeWidth = 168, top = 100, rowGap = 130;
-      const laneIdx = currentNovel.outlineFlow.lanes.findIndex(l => l.id === node.laneId);
-      const baseX = 40 + Math.max(0, laneIdx) * (laneWidth + laneGap) + (laneWidth - nodeWidth) / 2;
-      const baseY = top + ((node.row || 1) - 1) * rowGap;
-      node.offsetX = Math.max(10 - baseX, Math.round(start.ox + p.x - start.x));
-      node.offsetY = Math.max(70 - baseY, Math.round(start.oy + p.y - start.y));
-      dirtyNovel = true;
-      renderFlowSvg();
-    };
-    const finish = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", finish);
-      window.removeEventListener("pointercancel", finish);
-      scheduleSave();
-    };
-    window.addEventListener("pointermove", move, { passive: false });
-    window.addEventListener("pointerup", finish, { once: true });
-    window.addEventListener("pointercancel", finish, { once: true });
-  });
+function buildFlowLayout(flow){
+  const timeMargin=145,laneWidth=250,laneGap=30,top=100,headerY=43,rowGap=130,nodeWidth=168,positions=new Map();let maxRow=1;
+  flow.nodes.forEach(node=>{maxRow=Math.max(maxRow,node.row||1);const lines=wrapSvgText(node.text),height=Math.max(56,24+lines.length*18),laneIdx=flow.lanes.findIndex(l=>l.id===node.laneId);const x=timeMargin+30+laneIdx*(laneWidth+laneGap)+(laneWidth-nodeWidth)/2+(Number(node.offsetX)||0),y=top+((node.row||1)-1)*rowGap+(Number(node.offsetY)||0);positions.set(node.id,{x,y,width:nodeWidth,height,centerX:x+nodeWidth/2,topY:y,bottomY:y+height,lines});});
+  const naturalWidth=timeMargin+70+flow.lanes.length*laneWidth+Math.max(0,flow.lanes.length-1)*laneGap;const maxRight=Math.max(naturalWidth,...[...positions.values()].map(p=>p.x+p.width+40));const maxLabel=Math.max(0,...flow.timeLabels.map(t=>Number(t.y)||0));const maxBottom=Math.max(top+maxRow*rowGap+80,maxLabel+100,...[...positions.values()].map(p=>p.y+p.height+60));return{timeMargin,laneWidth,laneGap,headerY,rowGap,nodeWidth,positions,width:Math.max(520,maxRight),height:Math.max(320,maxBottom)};
 }
-async function exportFlowchartPng() {
-  const svg = $("flowchartSvg");
-  if (!currentNovel.outlineFlow.nodes.length) { toast("PNG出力するにはイベントを1つ以上追加してください。"); return; }
-  const serializer = new XMLSerializer();
-  const source = serializer.serializeToString(svg);
-  const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const img = new Image();
-  img.onload = () => {
-    const canvas = document.createElement("canvas");
-    const scale = 2;
-    canvas.width = img.width * scale;
-    canvas.height = img.height * scale;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#fffdf8";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0);
-    URL.revokeObjectURL(url);
-    const a = document.createElement("a");
-    a.href = canvas.toDataURL("image/png");
-    a.download = `${safeFileName(currentNovel.title)}_時系列フローチャート.png`;
-    document.body.appendChild(a); a.click(); a.remove();
-  };
-  img.onerror = () => { URL.revokeObjectURL(url); toast("PNG出力に失敗しました。"); };
-  img.src = url;
+function renderFlowSvg(){
+  const svg=$("flowchartSvg"),flow=currentNovel.outlineFlow=normalizeFlow(currentNovel.outlineFlow),L=buildFlowLayout(flow),ns="http://www.w3.org/2000/svg";
+  svg.innerHTML="";svg.setAttribute("viewBox",`0 0 ${L.width} ${L.height}`);svg.setAttribute("width",String(L.width));svg.setAttribute("height",String(L.height));
+  const defs=document.createElementNS(ns,"defs"),marker=document.createElementNS(ns,"marker");marker.setAttribute("id","arrowhead");marker.setAttribute("markerWidth","10");marker.setAttribute("markerHeight","7");marker.setAttribute("refX","9");marker.setAttribute("refY","3.5");marker.setAttribute("orient","auto");const ap=document.createElementNS(ns,"path");ap.setAttribute("d","M0,0 L10,3.5 L0,7 z");ap.setAttribute("fill","#2f5d62");marker.appendChild(ap);defs.appendChild(marker);svg.appendChild(defs);
+  const bg=document.createElementNS(ns,"rect");bg.setAttribute("width",String(L.width));bg.setAttribute("height",String(L.height));bg.setAttribute("fill","#fffdf8");svg.appendChild(bg);
+  const axis=document.createElementNS(ns,"line");axis.setAttribute("x1","125");axis.setAttribute("x2","125");axis.setAttribute("y1","75");axis.setAttribute("y2",String(L.height-25));axis.setAttribute("stroke","#cfc6b8");axis.setAttribute("stroke-width","2");svg.appendChild(axis);
+  flow.timeLabels.forEach(label=>{const g=document.createElementNS(ns,"g");g.classList.add("time-label-group");g.style.cursor="grab";g.style.touchAction="none";const y=label.y;const tick=document.createElementNS(ns,"line");tick.setAttribute("x1","116");tick.setAttribute("x2","134");tick.setAttribute("y1",String(y));tick.setAttribute("y2",String(y));tick.setAttribute("stroke","#8f867a");tick.setAttribute("stroke-width","2");const r=document.createElementNS(ns,"rect");r.setAttribute("x","8");r.setAttribute("y",String(y-18));r.setAttribute("width","104");r.setAttribute("height","36");r.setAttribute("rx","10");r.setAttribute("fill","#f7f3eb");r.setAttribute("stroke","#d9d2c6");const t=document.createElementNS(ns,"text");t.setAttribute("x","60");t.setAttribute("y",String(y+5));t.setAttribute("text-anchor","middle");t.setAttribute("font-size","13");t.textContent=label.text;g.append(r,t,tick);g.addEventListener("dblclick",e=>{e.stopPropagation();editTimeLabel(label,e.clientX,e.clientY)});g.addEventListener("contextmenu",e=>{e.preventDefault();editTimeLabel(label,e.clientX,e.clientY)});let drag=null;g.addEventListener("pointerdown",e=>{if(e.button!==0)return;g.setPointerCapture(e.pointerId);drag={start:svgPoint(svg,e.clientX,e.clientY).y,y:label.y,dy:0};});g.addEventListener("pointermove",e=>{if(!drag)return;const p=svgPoint(svg,e.clientX,e.clientY);drag.dy=p.y-drag.start;g.setAttribute("transform",`translate(0 ${drag.dy})`);});g.addEventListener("pointerup",()=>{if(drag){label.y=Math.max(85,drag.y+drag.dy);drag=null;g.removeAttribute("transform");dirtyNovel=true;renderFlowSvg();scheduleSave();}});svg.appendChild(g);});
+  flow.lanes.forEach((lane,index)=>{const x=L.timeMargin+30+index*(L.laneWidth+L.laneGap);const group=document.createElementNS(ns,"g");group.classList.add("flow-lane-zone");group.dataset.laneId=lane.id;const zone=document.createElementNS(ns,"rect");zone.setAttribute("x",String(x));zone.setAttribute("y","18");zone.setAttribute("width",String(L.laneWidth));zone.setAttribute("height",String(L.height-45));zone.setAttribute("fill","transparent");zone.setAttribute("stroke","none");group.appendChild(zone);const titleBg=document.createElementNS(ns,"rect");titleBg.setAttribute("x",String(x));titleBg.setAttribute("y","20");titleBg.setAttribute("width",String(L.laneWidth));titleBg.setAttribute("height","42");titleBg.setAttribute("rx","12");titleBg.setAttribute("fill","#f1ebe1");titleBg.setAttribute("stroke","#d9d2c6");const title=document.createElementNS(ns,"text");title.setAttribute("x",String(x+L.laneWidth/2));title.setAttribute("y",String(L.headerY+4));title.setAttribute("text-anchor","middle");title.setAttribute("font-size","16");title.setAttribute("font-weight","700");title.textContent=lane.name;group.append(titleBg,title);const guide=document.createElementNS(ns,"line");guide.setAttribute("x1",String(x+L.laneWidth/2));guide.setAttribute("x2",String(x+L.laneWidth/2));guide.setAttribute("y1","72");guide.setAttribute("y2",String(L.height-28));guide.setAttribute("stroke","#ece5d9");guide.setAttribute("stroke-width","2");guide.setAttribute("stroke-dasharray","4 8");group.appendChild(guide);titleBg.addEventListener("dblclick",e=>{e.stopPropagation();openLaneEditor(lane,e.clientX,e.clientY)});title.addEventListener("dblclick",e=>{e.stopPropagation();openLaneEditor(lane,e.clientX,e.clientY)});group.addEventListener("contextmenu",e=>{e.preventDefault();const target=e.target;if(target===title||target===titleBg){openLaneEditor(lane,e.clientX,e.clientY);return;}const pt=svgPoint(svg,e.clientX,e.clientY);openEventEditor({laneId:lane.id,x:e.clientX,y:e.clientY,svgY:pt.y});});svg.appendChild(group);});
+  flow.links.forEach(link=>{const a=L.positions.get(link.from),b=L.positions.get(link.to);if(!a||!b)return;const path=document.createElementNS(ns,"path");const midY=Math.min(b.topY-18,a.bottomY+24);const d=Math.abs(a.centerX-b.centerX)<2?`M ${a.centerX} ${a.bottomY} L ${b.centerX} ${b.topY}`:`M ${a.centerX} ${a.bottomY} L ${a.centerX} ${midY} L ${b.centerX} ${midY} L ${b.centerX} ${b.topY}`;path.setAttribute("d",d);path.setAttribute("fill","none");path.setAttribute("stroke","#2f5d62");path.setAttribute("stroke-width","2.5");path.setAttribute("marker-end","url(#arrowhead)");path.classList.add("flow-link-path");path.addEventListener("contextmenu",e=>{e.preventDefault();showFloatingPanel(e.clientX,e.clientY,p=>{const s=document.createElement("span");s.textContent="接続線";p.append(s,panelButton("削除","danger",()=>{currentNovel.outlineFlow.links=currentNovel.outlineFlow.links.filter(l=>l.id!==link.id);dirtyNovel=true;p.classList.add("hidden");renderFlowSvg();scheduleSave();}));});});svg.appendChild(path);});
+  flow.nodes.forEach(node=>{const pos=L.positions.get(node.id);if(!pos)return;const g=document.createElementNS(ns,"g");g.classList.add("flow-node-group");g.style.cursor="grab";g.style.touchAction="none";const rect=document.createElementNS(ns,"rect");rect.setAttribute("x",String(pos.x));rect.setAttribute("y",String(pos.y));rect.setAttribute("width",String(pos.width));rect.setAttribute("height",String(pos.height));rect.setAttribute("rx","12");rect.setAttribute("fill","#fff");rect.setAttribute("stroke","#bfb6a8");rect.setAttribute("stroke-width","1.5");g.appendChild(rect);pos.lines.forEach((line,i)=>{const t=document.createElementNS(ns,"text");t.setAttribute("x",String(pos.centerX));t.setAttribute("y",String(pos.y+24+i*18));t.setAttribute("text-anchor","middle");t.setAttribute("font-size","14");t.textContent=line;g.appendChild(t)});g.addEventListener("dblclick",e=>{e.stopPropagation();openEventEditor({node,x:e.clientX,y:e.clientY})});g.addEventListener("contextmenu",e=>{e.preventDefault();e.stopPropagation();openEventEditor({node,x:e.clientX,y:e.clientY})});let drag=null;g.addEventListener("pointerdown",e=>{if(e.button!==0)return;e.stopPropagation();g.setPointerCapture(e.pointerId);const p=svgPoint(svg,e.clientX,e.clientY);drag={x:p.x,y:p.y,ox:node.offsetX,oy:node.offsetY,dx:0,dy:0};g.style.cursor="grabbing"});g.addEventListener("pointermove",e=>{if(!drag)return;const p=svgPoint(svg,e.clientX,e.clientY);drag.dx=p.x-drag.x;drag.dy=p.y-drag.y;g.setAttribute("transform",`translate(${drag.dx} ${drag.dy})`)});g.addEventListener("pointerup",()=>{if(drag){node.offsetX=drag.ox+drag.dx;node.offsetY=drag.oy+drag.dy;drag=null;g.removeAttribute("transform");dirtyNovel=true;renderFlowSvg();scheduleSave()}});svg.appendChild(g);});
 }
+async function exportFlowchartPng(){const svg=$("flowchartSvg");if(!currentNovel.outlineFlow.nodes.length&&!currentNovel.outlineFlow.timeLabels.length){toast("PNG出力する内容がありません。");return;}const source=new XMLSerializer().serializeToString(svg),blob=new Blob([source],{type:"image/svg+xml;charset=utf-8"}),url=URL.createObjectURL(blob),img=new Image();img.onload=()=>{const scale=2,canvas=document.createElement("canvas");canvas.width=img.width*scale;canvas.height=img.height*scale;const ctx=canvas.getContext("2d");ctx.fillStyle="#fffdf8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.scale(scale,scale);ctx.drawImage(img,0,0);URL.revokeObjectURL(url);const a=document.createElement("a");a.href=canvas.toDataURL("image/png");a.download=`${safeFileName(currentNovel.title)}_時系列フローチャート.png`;document.body.appendChild(a);a.click();a.remove()};img.onerror=()=>{URL.revokeObjectURL(url);toast("PNG出力に失敗しました。")};img.src=url;}
 
 function addCharacterSheet() {
   currentNovel.characterSheets.push(createCharacterSheet(currentNovel.characterSheets.length + 1));
@@ -989,7 +826,7 @@ function renderCharacterSheets() {
   const box = $("characterSheets"); box.innerHTML = "";
   currentNovel.characterSheets = normalizeCharacterSheets(currentNovel.characterSheets);
   currentNovel.characterSheets.forEach((sheet, index) => {
-    const card = document.createElement("section"); card.className = "character-sheet";
+    const card = document.createElement("section"); card.className = "character-sheet"; card.dataset.characterId = sheet.id;
     const head = document.createElement("div"); head.className = "character-sheet-head";
     const titleInput = document.createElement("input"); titleInput.className = "sheet-title-input"; titleInput.value = sheet.title || `キャラ${index + 1}`; titleInput.placeholder = `キャラ${index + 1}`;
     titleInput.oninput = e => { sheet.title = e.target.value; dirtyNovel = true; renderCharacterRelations(); scheduleSave(); };
@@ -1010,91 +847,47 @@ function renderCharacterSheets() {
   });
 }
 function characterDisplayName(sheet) {
-  const nameField = sheet.fields?.find(f => (f.label || "").trim() === "名前");
-  return (nameField?.value || "").trim() || (sheet.title || "").trim() || "未設定";
+  const nameField=sheet.fields?.find(f=>(f.label||"").trim()==="名前");
+  return (nameField?.value||"").trim()||(sheet.title||"").trim()||"未設定";
 }
-function addCharacterRelation() {
-  const sheets = currentNovel.characterSheets;
-  if (sheets.length < 2) { toast("関係線を作るにはキャラを2人以上追加してください。"); return; }
-  currentNovel.characterRelations = currentNovel.characterRelations || [];
-  currentNovel.characterRelations.push({ id: uid("rel"), from: sheets[0].id, to: sheets[1].id, label: "関係", directed: false });
-  markNovelDirty();
-  renderCharacterRelations();
+let relationConnectStart=null;
+function startRelationConnect(sheetId=null){
+  relationConnectStart=sheetId;
+  const hint=$("relationModeHint");
+  if(hint) hint.textContent=sheetId?`${characterDisplayName(currentNovel.characterSheets.find(s=>s.id===sheetId))} から接続先をクリックしてください。`:"関係を作る2人を順にクリックしてください。";
+  $("addCharacterRelationBtn").classList.add("active-mode");
 }
-function deleteCharacterRelation(id) {
-  currentNovel.characterRelations = (currentNovel.characterRelations || []).filter(r => r.id !== id);
-  markNovelDirty();
-  renderCharacterRelations();
+function finishRelationConnect(sheetId){
+  if(!relationConnectStart){relationConnectStart=sheetId;const hint=$("relationModeHint");if(hint)hint.textContent=`${characterDisplayName(currentNovel.characterSheets.find(s=>s.id===sheetId))} から接続先をクリックしてください。`;return;}
+  if(relationConnectStart===sheetId){toast("別のキャラを選択してください。");return;}
+  currentNovel.characterRelations.push({id:uid("rel"),from:relationConnectStart,to:sheetId,label:"関係",lineStyle:"solid",color:"#6f6a61",arrowStart:false,arrowEnd:false});
+  const rel=currentNovel.characterRelations[currentNovel.characterRelations.length-1];relationConnectStart=null;$("addCharacterRelationBtn").classList.remove("active-mode");if($("relationModeHint"))$("relationModeHint").textContent="";dirtyNovel=true;renderCharacterRelationGraph();scheduleSave();setTimeout(()=>openRelationEditor(rel,window.innerWidth/2-160,window.innerHeight/2-180),0);
 }
-function renderCharacterRelations() {
-  if (!currentNovel || !$("characterRelationList") || !$("characterRelationSvg")) return;
-  currentNovel.characterRelations = normalizeCharacterRelations(currentNovel.characterRelations, currentNovel.characterSheets);
-  const list = $("characterRelationList");
-  list.innerHTML = "";
-  if (!currentNovel.characterRelations.length) list.innerHTML = '<p class="muted small">関係線はまだありません。「＋ 関係追加」で作成できます。</p>';
-  currentNovel.characterRelations.forEach((rel, index) => {
-    const row = document.createElement("div"); row.className = "character-relation-row";
-    const from = document.createElement("select");
-    const to = document.createElement("select");
-    currentNovel.characterSheets.forEach(sheet => {
-      const o1 = document.createElement("option"); o1.value = sheet.id; o1.textContent = characterDisplayName(sheet); from.appendChild(o1);
-      const o2 = document.createElement("option"); o2.value = sheet.id; o2.textContent = characterDisplayName(sheet); to.appendChild(o2);
-    });
-    from.value = rel.from; to.value = rel.to;
-    const label = document.createElement("input"); label.value = rel.label || "関係"; label.placeholder = "例：友人、姉、敵対";
-    const directedLabel = document.createElement("label"); directedLabel.className = "relation-directed";
-    const directed = document.createElement("input"); directed.type = "checkbox"; directed.checked = Boolean(rel.directed);
-    directedLabel.append(directed, document.createTextNode("矢印"));
-    const del = document.createElement("button"); del.type = "button"; del.className = "danger"; del.textContent = "削除";
-    const update = () => {
-      if (from.value === to.value) { toast("同じキャラ同士は結べません。"); return; }
-      rel.from = from.value; rel.to = to.value; rel.label = label.value; rel.directed = directed.checked;
-      dirtyNovel = true; renderCharacterRelationGraph(); scheduleSave();
-    };
-    from.onchange = update; to.onchange = update; label.oninput = update; directed.onchange = update;
-    del.onclick = () => deleteCharacterRelation(rel.id);
-    const num = document.createElement("span"); num.className = "muted small"; num.textContent = `関係${index + 1}`;
-    row.append(num, from, label, to, directedLabel, del); list.appendChild(row);
+function addCharacterRelation(){if(currentNovel.characterSheets.length<2){toast("関係線を作るにはキャラを2人以上追加してください。");return;}startRelationConnect();}
+function deleteCharacterRelation(id){currentNovel.characterRelations=currentNovel.characterRelations.filter(r=>r.id!==id);dirtyNovel=true;renderCharacterRelationGraph();scheduleSave();}
+function openRelationEditor(rel,x,y){
+  showFloatingPanel(x,y,panel=>{
+    const h=document.createElement("strong");h.textContent="関係線を編集";
+    const label=document.createElement("input");label.value=rel.label||"関係";label.placeholder="関係名";
+    const lineStyle=document.createElement("select");[["solid","実線"],["dashed","点線"],["dashdot","一点鎖線"]].forEach(([v,t])=>{const o=document.createElement("option");o.value=v;o.textContent=t;lineStyle.appendChild(o)});lineStyle.value=rel.lineStyle||"solid";
+    const colorWrap=document.createElement("label");colorWrap.className="color-row";colorWrap.append(document.createTextNode("色"));const color=document.createElement("input");color.type="color";color.value=rel.color||"#6f6a61";colorWrap.appendChild(color);
+    const arrows=document.createElement("div");arrows.className="arrow-options";const a1=document.createElement("label"),s=document.createElement("input");s.type="checkbox";s.checked=Boolean(rel.arrowStart);a1.append(s,document.createTextNode("B → A"));const a2=document.createElement("label"),e=document.createElement("input");e.type="checkbox";e.checked=Boolean(rel.arrowEnd);a2.append(e,document.createTextNode("A → B"));arrows.append(a1,a2);
+    const names=document.createElement("div");names.className="small muted";names.textContent=`A: ${characterDisplayName(currentNovel.characterSheets.find(x=>x.id===rel.from))} / B: ${characterDisplayName(currentNovel.characterSheets.find(x=>x.id===rel.to))}`;
+    const actions=document.createElement("div");actions.className="panel-actions";actions.append(panelButton("保存","primary",()=>{rel.label=label.value;rel.lineStyle=lineStyle.value;rel.color=color.value;rel.arrowStart=s.checked;rel.arrowEnd=e.checked;dirtyNovel=true;panel.classList.add("hidden");renderCharacterRelationGraph();scheduleSave()}),panelButton("削除","danger",()=>{panel.classList.add("hidden");deleteCharacterRelation(rel.id)}));
+    panel.append(h,names,label,lineStyle,colorWrap,arrows,actions);
   });
-  renderCharacterRelationGraph();
 }
-function renderCharacterRelationGraph() {
-  const svg = $("characterRelationSvg");
-  if (!svg) return;
-  const ns = "http://www.w3.org/2000/svg";
-  const sheets = currentNovel.characterSheets;
-  const relations = currentNovel.characterRelations || [];
-  const cols = Math.max(1, Math.ceil(Math.sqrt(sheets.length)));
-  const rows = Math.max(1, Math.ceil(sheets.length / cols));
-  const cellW = 250, cellH = 155, nodeW = 150, nodeH = 56;
-  const width = Math.max(360, cols * cellW + 60), height = Math.max(230, rows * cellH + 70);
-  svg.innerHTML = ""; svg.setAttribute("viewBox", `0 0 ${width} ${height}`); svg.setAttribute("width", String(width)); svg.setAttribute("height", String(height));
-  const defs = document.createElementNS(ns, "defs");
-  const marker = document.createElementNS(ns, "marker"); marker.setAttribute("id", "relationArrow"); marker.setAttribute("markerWidth", "10"); marker.setAttribute("markerHeight", "7"); marker.setAttribute("refX", "9"); marker.setAttribute("refY", "3.5"); marker.setAttribute("orient", "auto");
-  const ap = document.createElementNS(ns, "path"); ap.setAttribute("d", "M0,0 L10,3.5 L0,7 z"); ap.setAttribute("fill", "#6f6a61"); marker.appendChild(ap); defs.appendChild(marker); svg.appendChild(defs);
-  const bg = document.createElementNS(ns, "rect"); bg.setAttribute("width", String(width)); bg.setAttribute("height", String(height)); bg.setAttribute("fill", "#fffdf8"); svg.appendChild(bg);
-  const pos = new Map();
-  sheets.forEach((sheet, i) => {
-    const col = i % cols, row = Math.floor(i / cols);
-    const cx = 30 + col * cellW + cellW / 2, cy = 40 + row * cellH + cellH / 2;
-    pos.set(sheet.id, { cx, cy, x: cx - nodeW/2, y: cy - nodeH/2 });
-  });
-  relations.forEach(rel => {
-    const a = pos.get(rel.from), b = pos.get(rel.to); if (!a || !b) return;
-    const dx = b.cx - a.cx, dy = b.cy - a.cy;
-    const edgeScale = (vx, vy) => 1 / Math.max(Math.abs(vx) / (nodeW / 2), Math.abs(vy) / (nodeH / 2), 0.0001);
-    const ta = edgeScale(dx, dy), tb = edgeScale(dx, dy);
-    const x1 = a.cx + dx * ta, y1 = a.cy + dy * ta;
-    const x2 = b.cx - dx * tb, y2 = b.cy - dy * tb;
-    const line = document.createElementNS(ns, "line"); line.setAttribute("x1", String(x1)); line.setAttribute("y1", String(y1)); line.setAttribute("x2", String(x2)); line.setAttribute("y2", String(y2)); line.setAttribute("stroke", "#6f6a61"); line.setAttribute("stroke-width", "2.4"); if (rel.directed) line.setAttribute("marker-end", "url(#relationArrow)"); svg.appendChild(line);
-    const mx=(a.cx+b.cx)/2, my=(a.cy+b.cy)/2;
-    const labelBg = document.createElementNS(ns, "rect"); const tw=Math.max(50,(rel.label||"関係").length*15+18); labelBg.setAttribute("x",String(mx-tw/2)); labelBg.setAttribute("y",String(my-15)); labelBg.setAttribute("width",String(tw)); labelBg.setAttribute("height","26"); labelBg.setAttribute("rx","9"); labelBg.setAttribute("fill","#fffdf8"); labelBg.setAttribute("stroke","#d9d2c6"); svg.appendChild(labelBg);
-    const text = document.createElementNS(ns,"text"); text.setAttribute("x",String(mx)); text.setAttribute("y",String(my+3)); text.setAttribute("text-anchor","middle"); text.setAttribute("font-size","13"); text.setAttribute("font-family","'Yu Mincho','Noto Serif JP',serif"); text.textContent=rel.label||"関係"; svg.appendChild(text);
-  });
-  sheets.forEach(sheet => {
-    const p=pos.get(sheet.id); const rect=document.createElementNS(ns,"rect"); rect.setAttribute("x",String(p.x)); rect.setAttribute("y",String(p.y)); rect.setAttribute("width",String(nodeW)); rect.setAttribute("height",String(nodeH)); rect.setAttribute("rx","14"); rect.setAttribute("fill","#fff"); rect.setAttribute("stroke","#bfb6a8"); rect.setAttribute("stroke-width","1.5"); svg.appendChild(rect);
-    const text=document.createElementNS(ns,"text"); text.setAttribute("x",String(p.cx)); text.setAttribute("y",String(p.cy+5)); text.setAttribute("text-anchor","middle"); text.setAttribute("font-size","15"); text.setAttribute("font-family","'Yu Mincho','Noto Serif JP',serif"); text.textContent=characterDisplayName(sheet); svg.appendChild(text);
-  });
+function renderCharacterRelations(){currentNovel.characterRelations=normalizeCharacterRelations(currentNovel.characterRelations,currentNovel.characterSheets);renderCharacterRelationGraph();}
+function lineDash(style){if(style==="dashed")return"8 7";if(style==="dashdot")return"12 5 2 5";return"";}
+function renderCharacterRelationGraph(){
+  const svg=$("characterRelationSvg");if(!svg)return;const ns="http://www.w3.org/2000/svg",sheets=currentNovel.characterSheets,relations=currentNovel.characterRelations=normalizeCharacterRelations(currentNovel.characterRelations,sheets);
+  const cols=Math.max(1,Math.ceil(Math.sqrt(sheets.length))),cellW=260,cellH=165,nodeW=158,nodeH=58,width=Math.max(420,cols*cellW+80),rows=Math.max(1,Math.ceil(sheets.length/cols)),height=Math.max(300,rows*cellH+90);
+  sheets.forEach((sheet,i)=>{if(sheet.graphX==null||sheet.graphY==null){const col=i%cols,row=Math.floor(i/cols);sheet.graphX=45+col*cellW+cellW/2;sheet.graphY=45+row*cellH+cellH/2;}});
+  const maxX=Math.max(width,...sheets.map(s=>s.graphX+nodeW)),maxY=Math.max(height,...sheets.map(s=>s.graphY+nodeH));svg.innerHTML="";svg.setAttribute("viewBox",`0 0 ${maxX+40} ${maxY+40}`);svg.setAttribute("width",String(maxX+40));svg.setAttribute("height",String(maxY+40));
+  const defs=document.createElementNS(ns,"defs");relations.forEach(rel=>{["start","end"].forEach(side=>{const m=document.createElementNS(ns,"marker");m.setAttribute("id",`rel_${side}_${rel.id}`);m.setAttribute("markerWidth","10");m.setAttribute("markerHeight","7");m.setAttribute("refX",side==="end"?"9":"1");m.setAttribute("refY","3.5");m.setAttribute("orient","auto-start-reverse");const p=document.createElementNS(ns,"path");p.setAttribute("d","M0,0 L10,3.5 L0,7 z");p.setAttribute("fill",rel.color);m.appendChild(p);defs.appendChild(m);});});svg.appendChild(defs);const bg=document.createElementNS(ns,"rect");bg.setAttribute("width","100%");bg.setAttribute("height","100%");bg.setAttribute("fill","#fffdf8");svg.appendChild(bg);
+  const pos=new Map(sheets.map(s=>[s.id,{cx:s.graphX,cy:s.graphY,x:s.graphX-nodeW/2,y:s.graphY-nodeH/2}]));
+  relations.forEach(rel=>{const a=pos.get(rel.from),b=pos.get(rel.to);if(!a||!b)return;const dx=b.cx-a.cx,dy=b.cy-a.cy,scale=1/Math.max(Math.abs(dx)/(nodeW/2),Math.abs(dy)/(nodeH/2),.0001),x1=a.cx+dx*scale,y1=a.cy+dy*scale,x2=b.cx-dx*scale,y2=b.cy-dy*scale;const g=document.createElementNS(ns,"g");g.classList.add("relation-edge");g.style.cursor="pointer";const line=document.createElementNS(ns,"line");line.setAttribute("x1",x1);line.setAttribute("y1",y1);line.setAttribute("x2",x2);line.setAttribute("y2",y2);line.setAttribute("stroke",rel.color);line.setAttribute("stroke-width","2.6");const dash=lineDash(rel.lineStyle);if(dash)line.setAttribute("stroke-dasharray",dash);if(rel.arrowStart)line.setAttribute("marker-start",`url(#rel_start_${rel.id})`);if(rel.arrowEnd)line.setAttribute("marker-end",`url(#rel_end_${rel.id})`);const hit=document.createElementNS(ns,"line");hit.setAttribute("x1",x1);hit.setAttribute("y1",y1);hit.setAttribute("x2",x2);hit.setAttribute("y2",y2);hit.setAttribute("stroke","transparent");hit.setAttribute("stroke-width","16");const mx=(a.cx+b.cx)/2,my=(a.cy+b.cy)/2,tw=Math.max(54,(rel.label||"関係").length*15+20),rb=document.createElementNS(ns,"rect");rb.setAttribute("x",mx-tw/2);rb.setAttribute("y",my-15);rb.setAttribute("width",tw);rb.setAttribute("height","26");rb.setAttribute("rx","9");rb.setAttribute("fill","#fffdf8");rb.setAttribute("stroke",rel.color);const text=document.createElementNS(ns,"text");text.setAttribute("x",mx);text.setAttribute("y",my+3);text.setAttribute("text-anchor","middle");text.setAttribute("font-size","13");text.textContent=rel.label||"関係";g.append(line,hit,rb,text);const edit=e=>{e.preventDefault();e.stopPropagation();openRelationEditor(rel,e.clientX,e.clientY)};g.addEventListener("contextmenu",edit);g.addEventListener("dblclick",edit);svg.appendChild(g);});
+  sheets.forEach(sheet=>{const p=pos.get(sheet.id),g=document.createElementNS(ns,"g");g.classList.add("character-graph-node");g.style.cursor="grab";g.style.touchAction="none";const rect=document.createElementNS(ns,"rect");rect.setAttribute("x",p.x);rect.setAttribute("y",p.y);rect.setAttribute("width",nodeW);rect.setAttribute("height",nodeH);rect.setAttribute("rx","14");rect.setAttribute("fill","#fff");rect.setAttribute("stroke","#bfb6a8");rect.setAttribute("stroke-width","1.5");const text=document.createElementNS(ns,"text");text.setAttribute("x",p.cx);text.setAttribute("y",p.cy+5);text.setAttribute("text-anchor","middle");text.setAttribute("font-size","15");text.textContent=characterDisplayName(sheet);g.append(rect,text);g.addEventListener("click",e=>{if(relationConnectStart!==null||$("addCharacterRelationBtn").classList.contains("active-mode")){e.stopPropagation();finishRelationConnect(sheet.id)}});g.addEventListener("contextmenu",e=>{e.preventDefault();e.stopPropagation();showFloatingPanel(e.clientX,e.clientY,panel=>{const s=document.createElement("strong");s.textContent=characterDisplayName(sheet);panel.append(s,panelButton("このキャラから関係線","primary",()=>{panel.classList.add("hidden");startRelationConnect(sheet.id)}));});});g.addEventListener("dblclick",()=>{const card=document.querySelector(`[data-character-id="${sheet.id}"]`);if(card){card.scrollIntoView({behavior:"smooth",block:"center"});card.classList.add("flash-card");setTimeout(()=>card.classList.remove("flash-card"),900)}});let drag=null;g.addEventListener("pointerdown",e=>{if(e.button!==0)return;if(relationConnectStart!==null||$("addCharacterRelationBtn").classList.contains("active-mode"))return;g.setPointerCapture(e.pointerId);const pt=svgPoint(svg,e.clientX,e.clientY);drag={x:pt.x,y:pt.y,gx:sheet.graphX,gy:sheet.graphY,dx:0,dy:0};});g.addEventListener("pointermove",e=>{if(!drag)return;const pt=svgPoint(svg,e.clientX,e.clientY);drag.dx=pt.x-drag.x;drag.dy=pt.y-drag.y;g.setAttribute("transform",`translate(${drag.dx} ${drag.dy})`)});g.addEventListener("pointerup",()=>{if(drag){sheet.graphX=Math.max(nodeW/2+10,drag.gx+drag.dx);sheet.graphY=Math.max(nodeH/2+10,drag.gy+drag.dy);drag=null;g.removeAttribute("transform");dirtyNovel=true;renderCharacterRelationGraph();scheduleSave()}});svg.appendChild(g);});
 }
 
 $("signupBtn").onclick = signup; $("loginBtn").onclick = login; $("logoutBtn").onclick = () => signOut(auth);
@@ -1116,7 +909,7 @@ $("pagePreset").onchange = e => { if (e.target.value === "A6") { $("charsPerLine
 $("proofBtn").onclick = proof; $("exportBtn").onclick = () => $("exportDialog").showModal();
 $("downloadTxtBtn").onclick = downloadManuscriptTxt; $("downloadOutlineTxtBtn").onclick = downloadOutlineTxt; $("downloadCharactersTxtBtn").onclick = downloadCharactersTxt;
 $("editor").addEventListener("input", () => { if (proofMode) { proofMode = false; $("proofSummary").classList.add("hidden"); } flushEditor(); dirtyChapterIds.add(activeChapterId); refreshStats(); scheduleSave(); });
-$("addFlowLaneBtn").onclick = addFlowLane; $("addFlowNodeBtn").onclick = addFlowNode; $("addFlowLinkBtn").onclick = addFlowLink; $("exportFlowPngBtn").onclick = exportFlowchartPng;
+$("addFlowLaneBtn").onclick = addFlowLane; $("addTimeLabelBtn").onclick = addTimeLabel; $("exportFlowPngBtn").onclick = exportFlowchartPng;
 $("addCharacterBtn").onclick = addCharacterSheet;
 $("addCharacterRelationBtn").onclick = addCharacterRelation;
 window.addEventListener("popstate", () => { const s = routeSlug(); if (auth.currentUser && s) openNovelBySlug(s); else if (auth.currentUser) dashboard(); });
