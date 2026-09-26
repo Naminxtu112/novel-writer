@@ -887,17 +887,38 @@ function renderCharacterRelationGraph(){
   const defs=document.createElementNS(ns,"defs");relations.forEach(rel=>{["start","end"].forEach(side=>{const m=document.createElementNS(ns,"marker");m.setAttribute("id",`rel_${side}_${rel.id}`);m.setAttribute("markerWidth","10");m.setAttribute("markerHeight","7");m.setAttribute("refX",side==="end"?"9":"1");m.setAttribute("refY","3.5");m.setAttribute("orient","auto-start-reverse");const p=document.createElementNS(ns,"path");p.setAttribute("d","M0,0 L10,3.5 L0,7 z");p.setAttribute("fill",rel.color);m.appendChild(p);defs.appendChild(m);});});svg.appendChild(defs);const bg=document.createElementNS(ns,"rect");bg.setAttribute("width","100%");bg.setAttribute("height","100%");bg.setAttribute("fill","#fffdf8");svg.appendChild(bg);
   const pos=new Map(sheets.map(s=>[s.id,{cx:s.graphX,cy:s.graphY,x:s.graphX-nodeW/2,y:s.graphY-nodeH/2}]));
   const pairGroups=new Map();
-  relations.forEach(rel=>{const key=[rel.from,rel.to].sort().join("::");if(!pairGroups.has(key))pairGroups.set(key,[]);pairGroups.get(key).push(rel);});
-  // 同じ2キャラ間の複数関係は、方向にかかわらず画面上のY方向へ固定間隔で分離する。
-  // これにより A→B / B→A のラベルが同じ位置に重ならない。
+  relations.forEach(rel=>{
+    const key=[rel.from,rel.to].sort().join("::");
+    if(!pairGroups.has(key))pairGroups.set(key,[]);
+    pairGroups.get(key).push(rel);
+  });
+
+  // v7.5: 同じ2キャラ間の複数関係を「上下スロット」に完全分離する。
+  // A→B / B→A も同じペアとして扱い、各ラベルに独立したY座標を割り当てる。
+  // ラベルの高さ(26px)より十分大きい間隔を確保するため、テキストボックス同士が重ならない。
   const relationOffset=new Map();
   pairGroups.forEach(group=>{
-    const labelGap=50;
-    group.forEach((rel,i)=>{
-      const slot=i-(group.length-1)/2;
-      relationOffset.set(rel.id,{labelY:slot*labelGap,curveY:slot*72});
+    const labelSlotGap=44;   // ラベル高さ26px + 上下余白18px
+    const curveSlotGap=74;   // 関係線も同じ位置に重ならないよう、ラベルより大きく分離
+
+    // 方向が逆の関係がある場合も、登録順に依存せず安定したスロット順にする。
+    const sorted=[...group].sort((r1,r2)=>{
+      const d1=`${r1.from}>${r1.to}`;
+      const d2=`${r2.from}>${r2.to}`;
+      if(d1!==d2)return d1.localeCompare(d2);
+      return String(r1.id).localeCompare(String(r2.id));
+    });
+
+    sorted.forEach((rel,i)=>{
+      // 2本なら -0.5/+0.5、3本なら -1/0/+1、4本なら -1.5/-0.5/+0.5/+1.5
+      const slot=i-(sorted.length-1)/2;
+      relationOffset.set(rel.id,{
+        labelY:slot*labelSlotGap,
+        curveY:slot*curveSlotGap
+      });
     });
   });
+
   relations.forEach(rel=>{
     const a=pos.get(rel.from),b=pos.get(rel.to);if(!a||!b)return;
     const dx=b.cx-a.cx,dy=b.cy-a.cy;
@@ -905,8 +926,15 @@ function renderCharacterRelationGraph(){
     const x1=a.cx+dx*scale,y1=a.cy+dy*scale,x2=b.cx-dx*scale,y2=b.cy-dy*scale;
     const offsets=relationOffset.get(rel.id)||{labelY:0,curveY:0};
     const midX=(x1+x2)/2,midY=(y1+y2)/2;
-    const controlX=midX,controlY=midY+offsets.curveY;
-    const labelX=midX,labelY=midY+offsets.labelY;
+
+    // 曲線はペアごとに別の上下レーンへ逃がす。
+    const controlX=midX;
+    const controlY=midY+offsets.curveY;
+
+    // ラベルは曲線とは独立した固定Yスロットへ置く。
+    // この位置決めにより、A→B と B→A のラベルも上下に分離される。
+    const labelX=midX;
+    const labelY=midY+offsets.labelY;
     const pathD=`M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`;
     const g=document.createElementNS(ns,"g");g.classList.add("relation-edge");g.style.cursor="pointer";
     const line=document.createElementNS(ns,"path");line.setAttribute("d",pathD);line.setAttribute("fill","none");line.setAttribute("stroke",rel.color);line.setAttribute("stroke-width","2.6");
